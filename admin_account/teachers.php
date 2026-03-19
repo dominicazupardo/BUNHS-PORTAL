@@ -1,0 +1,2763 @@
+<?php
+session_start();
+include '../db_connection.php';
+
+// ══ AJAX: get_schedules endpoint (must be first so it exits early) ══
+if (isset($_GET['get_schedules'])) {
+    header('Content-Type: application/json');
+    $tid   = mysqli_real_escape_string($conn, trim($_GET['tid']  ?? ''));
+    $ttype = mysqli_real_escape_string($conn, trim($_GET['ttype'] ?? 'teacher'));
+    $res   = $conn->query("SELECT * FROM teacher_schedules WHERE teacher_id='$tid' AND teacher_type='$ttype' ORDER BY sort_order ASC");
+    $rows  = [];
+    while ($r = $res->fetch_assoc()) $rows[] = $r;
+    echo json_encode($rows);
+    exit();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  AUTO-MIGRATE
+// ══════════════════════════════════════════════════════════════════════════════
+$migs = [
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS last_name         VARCHAR(100)  DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS first_name        VARCHAR(100)  DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS middle_name       VARCHAR(100)  DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS gender            VARCHAR(10)   DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS career_level      VARCHAR(80)   DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS employment_status VARCHAR(60)   DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS major             VARCHAR(150)  DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS subject_assigned  VARCHAR(200)  DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS grade_section     VARCHAR(100)  DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS room_assignment   VARCHAR(80)   DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS day_mon           TINYINT(1)    DEFAULT 0",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS day_tue           TINYINT(1)    DEFAULT 0",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS day_wed           TINYINT(1)    DEFAULT 0",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS day_thu           TINYINT(1)    DEFAULT 0",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS day_fri           TINYINT(1)    DEFAULT 0",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS time_start        VARCHAR(20)   DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS time_end          VARCHAR(20)   DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS club_role         VARCHAR(150)  DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS advisory_class    VARCHAR(100)  DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS nt_position       VARCHAR(100)  DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS nt_appt_type      VARCHAR(80)   DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS nt_fund_source    VARCHAR(80)   DEFAULT NULL",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS category          VARCHAR(20)   DEFAULT 'Teaching'",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS is_principal      TINYINT(1)    DEFAULT 0",
+    "ALTER TABLE teachers ADD COLUMN IF NOT EXISTS funding_source    VARCHAR(80)   DEFAULT 'NATIONAL'",
+
+    "CREATE TABLE IF NOT EXISTS `teacher_schedules` (
+        id           INT AUTO_INCREMENT PRIMARY KEY,
+        teacher_id   VARCHAR(50)  NOT NULL,
+        teacher_type VARCHAR(20)  DEFAULT 'teacher',
+        subject      VARCHAR(200) DEFAULT NULL,
+        grade        VARCHAR(50)  DEFAULT NULL,
+        section      VARCHAR(80)  DEFAULT NULL,
+        day_mon      TINYINT(1)   DEFAULT 0,
+        day_tue      TINYINT(1)   DEFAULT 0,
+        day_wed      TINYINT(1)   DEFAULT 0,
+        day_thu      TINYINT(1)   DEFAULT 0,
+        day_fri      TINYINT(1)   DEFAULT 0,
+        time_start   VARCHAR(20)  DEFAULT NULL,
+        time_end     VARCHAR(20)  DEFAULT NULL,
+        minutes      INT          DEFAULT 0,
+        sort_order   INT          DEFAULT 0,
+        INDEX idx_tid (teacher_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+    "CREATE TABLE IF NOT EXISTS `principal` (
+        id                    INT AUTO_INCREMENT PRIMARY KEY,
+        teacher_id            VARCHAR(50)  NOT NULL,
+        teacher_name          VARCHAR(200) NOT NULL,
+        last_name             VARCHAR(100) DEFAULT NULL,
+        first_name            VARCHAR(100) DEFAULT NULL,
+        middle_name           VARCHAR(100) DEFAULT NULL,
+        gender                VARCHAR(10)  DEFAULT NULL,
+        career_level          VARCHAR(80)  DEFAULT NULL,
+        employment_status     VARCHAR(60)  DEFAULT NULL,
+        teacher_qualification VARCHAR(80)  DEFAULT NULL,
+        major                 VARCHAR(150) DEFAULT NULL,
+        teacher_email         VARCHAR(150) DEFAULT NULL,
+        teacher_contact       VARCHAR(50)  DEFAULT NULL,
+        teacher_image         VARCHAR(255) DEFAULT NULL,
+        advisory_class        VARCHAR(100) DEFAULT NULL,
+        assigned_date         DATE         DEFAULT NULL,
+        created_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+    "CREATE TABLE IF NOT EXISTS `principal_history` (
+        id                    INT AUTO_INCREMENT PRIMARY KEY,
+        teacher_id            VARCHAR(50)  NOT NULL,
+        teacher_name          VARCHAR(200) NOT NULL,
+        last_name             VARCHAR(100) DEFAULT NULL,
+        first_name            VARCHAR(100) DEFAULT NULL,
+        middle_name           VARCHAR(100) DEFAULT NULL,
+        gender                VARCHAR(10)  DEFAULT NULL,
+        career_level          VARCHAR(80)  DEFAULT NULL,
+        employment_status     VARCHAR(60)  DEFAULT NULL,
+        teacher_qualification VARCHAR(80)  DEFAULT NULL,
+        major                 VARCHAR(150) DEFAULT NULL,
+        teacher_email         VARCHAR(150) DEFAULT NULL,
+        teacher_contact       VARCHAR(50)  DEFAULT NULL,
+        teacher_image         VARCHAR(255) DEFAULT NULL,
+        advisory_class        VARCHAR(100) DEFAULT NULL,
+        assigned_date         DATE         DEFAULT NULL,
+        replaced_date         DATE         DEFAULT NULL,
+        created_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+    "CREATE TABLE IF NOT EXISTS `teacher_history` (
+        id                    INT AUTO_INCREMENT PRIMARY KEY,
+        principal_hist_id     INT          NOT NULL,
+        teacher_id            VARCHAR(50)  NOT NULL,
+        teacher_name          VARCHAR(200) NOT NULL,
+        last_name             VARCHAR(100) DEFAULT NULL,
+        first_name            VARCHAR(100) DEFAULT NULL,
+        middle_name           VARCHAR(100) DEFAULT NULL,
+        gender                VARCHAR(10)  DEFAULT NULL,
+        career_level          VARCHAR(80)  DEFAULT NULL,
+        employment_status     VARCHAR(60)  DEFAULT NULL,
+        teacher_qualification VARCHAR(80)  DEFAULT NULL,
+        major                 VARCHAR(150) DEFAULT NULL,
+        subject_assigned      VARCHAR(200) DEFAULT NULL,
+        grade_section         VARCHAR(100) DEFAULT NULL,
+        category              VARCHAR(20)  DEFAULT 'Teaching',
+        funding_source        VARCHAR(80)  DEFAULT 'NATIONAL',
+        teacher_email         VARCHAR(150) DEFAULT NULL,
+        teacher_contact       VARCHAR(50)  DEFAULT NULL,
+        snapshot_date         TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_ph (principal_hist_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+];
+foreach ($migs as $s) {
+    $conn->query($s);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════════════════════════════════════════
+function e($conn, $v)
+{
+    return mysqli_real_escape_string($conn, trim($v ?? ''));
+}
+function h($v)
+{
+    return htmlspecialchars($v ?? '');
+}
+
+function saveImg()
+{
+    if (!isset($_FILES['teacher_image']) || $_FILES['teacher_image']['error'] != 0) return '';
+    $dir = "../assets/img/person/";
+    if (!is_dir($dir)) mkdir($dir, 0755, true);
+    $fn  = time() . '_' . basename($_FILES['teacher_image']['name']);
+    if (getimagesize($_FILES['teacher_image']['tmp_name']) && move_uploaded_file($_FILES['teacher_image']['tmp_name'], $dir . $fn))
+        return $dir . $fn;
+    return '';
+}
+
+function fmtTime($t)
+{
+    if (!$t) return '';
+    $d = DateTime::createFromFormat('H:i', $t);
+    if ($d) return $d->format('g:i A');
+    return $t;
+}
+
+function getScheds($conn, $tid, $type = 'teacher')
+{
+    $t   = e($conn, $tid);
+    $tp  = e($conn, $type);
+    $res = $conn->query("SELECT * FROM teacher_schedules WHERE teacher_id='$t' AND teacher_type='$tp' ORDER BY sort_order ASC");
+    $r   = [];
+    while ($row = $res->fetch_assoc()) $r[] = $row;
+    return $r;
+}
+
+function saveScheds($conn, $tid, $type, $scheds)
+{
+    $t  = e($conn, $tid);
+    $tp = e($conn, $type);
+    $conn->query("DELETE FROM teacher_schedules WHERE teacher_id='$t' AND teacher_type='$tp'");
+    foreach ($scheds as $i => $s) {
+        $conn->query("INSERT INTO teacher_schedules
+            (teacher_id,teacher_type,subject,grade,section,day_mon,day_tue,day_wed,day_thu,day_fri,time_start,time_end,minutes,sort_order)
+            VALUES ('$t','$tp','" . e($conn, $s['subject']) . "','" . e($conn, $s['grade']) . "','" . e($conn, $s['section']) . "',
+             " . ((int)$s['day_mon']) . "," . ((int)$s['day_tue']) . "," . ((int)$s['day_wed']) . "," . ((int)$s['day_thu']) . "," . ((int)$s['day_fri']) . ",
+             '" . e($conn, $s['time_start']) . "','" . e($conn, $s['time_end']) . "'," . ((int)$s['minutes']) . ",$i)");
+    }
+}
+
+function parseScheds()
+{
+    $out  = [];
+    $subj = $_POST['sched_subject'] ?? [];
+    foreach ($subj as $i => $s) {
+        if (trim($s) === '') continue;
+        $out[] = [
+            'subject'    => $s,
+            'grade'      => $_POST['sched_grade'][$i]   ?? '',
+            'section'    => $_POST['sched_section'][$i] ?? '',
+            'day_mon'    => isset($_POST['sched_mon'][$i]) ? 1 : 0,
+            'day_tue'    => isset($_POST['sched_tue'][$i]) ? 1 : 0,
+            'day_wed'    => isset($_POST['sched_wed'][$i]) ? 1 : 0,
+            'day_thu'    => isset($_POST['sched_thu'][$i]) ? 1 : 0,
+            'day_fri'    => isset($_POST['sched_fri'][$i]) ? 1 : 0,
+            'time_start' => $_POST['sched_tstart'][$i]  ?? '',
+            'time_end'   => $_POST['sched_tend'][$i]    ?? '',
+            'minutes'    => (int)($_POST['sched_mins'][$i] ?? 0),
+        ];
+    }
+    return $out;
+}
+
+function snapshotTeachers($conn, $phId)
+{
+    $res = $conn->query("SELECT * FROM teachers WHERE is_principal=0");
+    if (!$res) return;
+    while ($t = $res->fetch_assoc()) {
+        $conn->query("INSERT INTO teacher_history
+            (principal_hist_id,teacher_id,teacher_name,last_name,first_name,middle_name,gender,
+             career_level,employment_status,teacher_qualification,major,subject_assigned,
+             grade_section,category,funding_source,teacher_email,teacher_contact)
+            VALUES ($phId,
+             '" . e($conn, $t['teacher_id']) . "','" . e($conn, $t['teacher_name']) . "',
+             '" . e($conn, $t['last_name']) . "','" . e($conn, $t['first_name']) . "',
+             '" . e($conn, $t['middle_name']) . "','" . e($conn, $t['gender']) . "',
+             '" . e($conn, $t['career_level']) . "','" . e($conn, $t['employment_status']) . "',
+             '" . e($conn, $t['teacher_qualification']) . "','" . e($conn, $t['major']) . "',
+             '" . e($conn, $t['subject_assigned']) . "','" . e($conn, $t['grade_section']) . "',
+             '" . e($conn, $t['category']) . "','" . e($conn, $t['funding_source']) . "',
+             '" . e($conn, $t['teacher_email']) . "','" . e($conn, $t['teacher_contact']) . "')");
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  POST HANDLER
+// ══════════════════════════════════════════════════════════════════════════════
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    $act  = $_POST['action'];
+    $scheds = parseScheds();
+
+    // collect fields
+    $f = [
+        'teacher_id'   => e($conn, $_POST['teacher_id'] ?? ''),
+        'teacher_name' => e($conn, $_POST['teacher_name'] ?? ''),
+        'last_name'    => e($conn, $_POST['last_name'] ?? ''),
+        'first_name'   => e($conn, $_POST['first_name'] ?? ''),
+        'middle_name'  => e($conn, $_POST['middle_name'] ?? ''),
+        'gender'       => e($conn, $_POST['gender'] ?? ''),
+        'career_level' => e($conn, $_POST['career_level'] ?? ''),
+        'employment_status'      => e($conn, $_POST['employment_status'] ?? ''),
+        'teacher_qualification'  => e($conn, $_POST['teacher_qualification'] ?? ''),
+        'major'        => e($conn, $_POST['major'] ?? ''),
+        'subject_assigned'  => e($conn, $_POST['subject_assigned'] ?? ''),
+        'grade_section'     => e($conn, $_POST['grade_section'] ?? ''),
+        'room_assignment'   => e($conn, $_POST['room_assignment'] ?? ''),
+        'day_mon'  => isset($_POST['day_mon']) ? 1 : 0,
+        'day_tue'  => isset($_POST['day_tue']) ? 1 : 0,
+        'day_wed'  => isset($_POST['day_wed']) ? 1 : 0,
+        'day_thu'  => isset($_POST['day_thu']) ? 1 : 0,
+        'day_fri'  => isset($_POST['day_fri']) ? 1 : 0,
+        'time_start'   => e($conn, $_POST['time_start'] ?? ''),
+        'time_end'     => e($conn, $_POST['time_end'] ?? ''),
+        'club_role'    => e($conn, $_POST['club_role'] ?? ''),
+        'advisory_class'    => e($conn, $_POST['advisory_class'] ?? ''),
+        'nt_position'  => e($conn, $_POST['nt_position'] ?? ''),
+        'nt_appt_type' => e($conn, $_POST['nt_appt_type'] ?? ''),
+        'nt_fund_source'    => e($conn, $_POST['nt_fund_source'] ?? ''),
+        'category'     => e($conn, $_POST['category'] ?? 'Teaching'),
+        'funding_source'    => e($conn, $_POST['funding_source'] ?? 'NATIONAL'),
+        'teacher_email' => e($conn, $_POST['teacher_email'] ?? ''),
+        'teacher_contact'   => e($conn, $_POST['teacher_contact'] ?? ''),
+        'teacher_grades'    => isset($_POST['teacher_grades'])  ? e($conn, implode(', ', $_POST['teacher_grades']))  : '',
+        'teacher_subjects'  => isset($_POST['teacher_subjects']) ? e($conn, implode(', ', $_POST['teacher_subjects'])) : '',
+    ];
+    $img = saveImg();
+
+    if ($act === 'add') {
+        $isP = !empty($_POST['is_principal']);
+        if ($isP) {
+            // Archive current principal
+            $old = $conn->query("SELECT * FROM `principal` LIMIT 1")->fetch_assoc();
+            if ($old) {
+                $conn->query("INSERT INTO principal_history
+                    (teacher_id,teacher_name,last_name,first_name,middle_name,gender,career_level,
+                     employment_status,teacher_qualification,major,teacher_email,teacher_contact,
+                     teacher_image,advisory_class,assigned_date,replaced_date)
+                    VALUES (
+                     '" . e($conn, $old['teacher_id']) . "','" . e($conn, $old['teacher_name']) . "',
+                     '" . e($conn, $old['last_name']) . "','" . e($conn, $old['first_name']) . "',
+                     '" . e($conn, $old['middle_name']) . "','" . e($conn, $old['gender']) . "',
+                     '" . e($conn, $old['career_level']) . "','" . e($conn, $old['employment_status']) . "',
+                     '" . e($conn, $old['teacher_qualification']) . "','" . e($conn, $old['major']) . "',
+                     '" . e($conn, $old['teacher_email']) . "','" . e($conn, $old['teacher_contact']) . "',
+                     '" . e($conn, $old['teacher_image']) . "','" . e($conn, $old['advisory_class']) . "',
+                     '" . e($conn, $old['assigned_date']) . "', CURDATE())");
+                $phId = $conn->insert_id;
+                snapshotTeachers($conn, $phId);
+                $conn->query("DELETE FROM teacher_schedules WHERE teacher_id='" . e($conn, $old['teacher_id']) . "' AND teacher_type='principal'");
+                $conn->query("DELETE FROM `principal`");
+            }
+            $conn->query("INSERT INTO `principal`
+                (teacher_id,teacher_name,last_name,first_name,middle_name,gender,career_level,
+                 employment_status,teacher_qualification,major,teacher_email,teacher_contact,
+                 teacher_image,advisory_class,assigned_date)
+                VALUES ('{$f['teacher_id']}','{$f['teacher_name']}','{$f['last_name']}',
+                 '{$f['first_name']}','{$f['middle_name']}','{$f['gender']}','{$f['career_level']}',
+                 '{$f['employment_status']}','{$f['teacher_qualification']}','{$f['major']}',
+                 '{$f['teacher_email']}','{$f['teacher_contact']}','" . e($conn, $img) . "',
+                 '{$f['advisory_class']}',CURDATE())");
+            if (!empty($scheds)) saveScheds($conn, $f['teacher_id'], 'principal', $scheds);
+            $_SESSION['success'] = "Principal appointed successfully.";
+        } else {
+            $conn->query("INSERT INTO teachers
+                (teacher_id,teacher_name,last_name,first_name,middle_name,gender,career_level,
+                 employment_status,teacher_qualification,major,subject_assigned,grade_section,
+                 room_assignment,day_mon,day_tue,day_wed,day_thu,day_fri,time_start,time_end,
+                 club_role,advisory_class,nt_position,nt_appt_type,nt_fund_source,category,
+                 funding_source,teacher_email,teacher_contact,teacher_image,teacher_grades,
+                 teacher_subjects,is_principal)
+                VALUES ('{$f['teacher_id']}','{$f['teacher_name']}','{$f['last_name']}',
+                 '{$f['first_name']}','{$f['middle_name']}','{$f['gender']}','{$f['career_level']}',
+                 '{$f['employment_status']}','{$f['teacher_qualification']}','{$f['major']}',
+                 '{$f['subject_assigned']}','{$f['grade_section']}','{$f['room_assignment']}',
+                 {$f['day_mon']},{$f['day_tue']},{$f['day_wed']},{$f['day_thu']},{$f['day_fri']},
+                 '{$f['time_start']}','{$f['time_end']}','{$f['club_role']}','{$f['advisory_class']}',
+                 '{$f['nt_position']}','{$f['nt_appt_type']}','{$f['nt_fund_source']}',
+                 '{$f['category']}','{$f['funding_source']}','{$f['teacher_email']}',
+                 '{$f['teacher_contact']}','" . e($conn, $img) . "',
+                 '{$f['teacher_grades']}','{$f['teacher_subjects']}',0)");
+            if ($conn->affected_rows > 0) {
+                if (!empty($scheds)) saveScheds($conn, $f['teacher_id'], 'teacher', $scheds);
+                $_SESSION['success'] = "Personnel added successfully.";
+            } else {
+                $_SESSION['error'] = "Failed: " . $conn->error;
+            }
+        }
+    } elseif ($act === 'edit') {
+        $rid   = e($conn, $_POST['edit_record_id'] ?? '');
+        $rtype = $_POST['edit_type'] ?? 'teacher';
+        if ($rtype === 'principal') {
+            $sql = "UPDATE `principal` SET
+                teacher_id='{$f['teacher_id']}',teacher_name='{$f['teacher_name']}',
+                last_name='{$f['last_name']}',first_name='{$f['first_name']}',
+                middle_name='{$f['middle_name']}',gender='{$f['gender']}',
+                career_level='{$f['career_level']}',employment_status='{$f['employment_status']}',
+                teacher_qualification='{$f['teacher_qualification']}',major='{$f['major']}',
+                teacher_email='{$f['teacher_email']}',teacher_contact='{$f['teacher_contact']}',
+                advisory_class='{$f['advisory_class']}'";
+            if ($img) $sql .= ",teacher_image='" . e($conn, $img) . "'";
+            $sql .= " WHERE id='$rid'";
+            $conn->query($sql);
+            saveScheds($conn, $f['teacher_id'], 'principal', $scheds);
+        } else {
+            $sql = "UPDATE teachers SET
+                teacher_id='{$f['teacher_id']}',teacher_name='{$f['teacher_name']}',
+                last_name='{$f['last_name']}',first_name='{$f['first_name']}',
+                middle_name='{$f['middle_name']}',gender='{$f['gender']}',
+                career_level='{$f['career_level']}',employment_status='{$f['employment_status']}',
+                teacher_qualification='{$f['teacher_qualification']}',major='{$f['major']}',
+                subject_assigned='{$f['subject_assigned']}',grade_section='{$f['grade_section']}',
+                room_assignment='{$f['room_assignment']}',
+                day_mon={$f['day_mon']},day_tue={$f['day_tue']},day_wed={$f['day_wed']},
+                day_thu={$f['day_thu']},day_fri={$f['day_fri']},
+                time_start='{$f['time_start']}',time_end='{$f['time_end']}',
+                club_role='{$f['club_role']}',advisory_class='{$f['advisory_class']}',
+                nt_position='{$f['nt_position']}',nt_appt_type='{$f['nt_appt_type']}',
+                nt_fund_source='{$f['nt_fund_source']}',category='{$f['category']}',
+                funding_source='{$f['funding_source']}',teacher_email='{$f['teacher_email']}',
+                teacher_contact='{$f['teacher_contact']}',
+                teacher_grades='{$f['teacher_grades']}',teacher_subjects='{$f['teacher_subjects']}'";
+            if ($img) $sql .= ",teacher_image='" . e($conn, $img) . "'";
+            $sql .= " WHERE id='$rid'";
+            $conn->query($sql);
+            saveScheds($conn, $f['teacher_id'], 'teacher', $scheds);
+        }
+        $_SESSION['success'] = "Record updated successfully.";
+    } elseif ($act === 'delete') {
+        $rid   = e($conn, $_POST['delete_record_id'] ?? '');
+        $rtype = $_POST['delete_type'] ?? 'teacher';
+        if ($rtype === 'principal') {
+            $p = $conn->query("SELECT teacher_id FROM `principal` WHERE id='$rid'")->fetch_assoc();
+            if ($p) $conn->query("DELETE FROM teacher_schedules WHERE teacher_id='" . e($conn, $p['teacher_id']) . "' AND teacher_type='principal'");
+            $conn->query("DELETE FROM `principal` WHERE id='$rid'");
+        } else {
+            $t = $conn->query("SELECT teacher_id FROM teachers WHERE id='$rid'")->fetch_assoc();
+            if ($t) $conn->query("DELETE FROM teacher_schedules WHERE teacher_id='" . e($conn, $t['teacher_id']) . "' AND teacher_type='teacher'");
+            $conn->query("DELETE FROM teachers WHERE id='$rid'");
+        }
+        $_SESSION['success'] = "Deleted successfully.";
+    }
+
+    header("Location: teachers.php");
+    exit();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  FETCH DATA
+// ══════════════════════════════════════════════════════════════════════════════
+$principal = $conn->query("SELECT * FROM `principal` LIMIT 1")->fetch_assoc();
+
+$rankOrder = [
+    'School Principal I' => 0,
+    'School Principal II' => 0,
+    'School Principal III' => 0,
+    'Principal I' => 0,
+    'Principal II' => 0,
+    'Principal III' => 0,
+    'Master Teacher IV' => 1,
+    'Master Teacher III' => 2,
+    'Master Teacher II' => 3,
+    'Master Teacher I' => 4,
+    'Head Teacher III' => 5,
+    'Head Teacher II' => 6,
+    'Head Teacher I' => 7,
+    'Teacher III' => 8,
+    'Teacher II' => 9,
+    'Teacher I' => 10,
+];
+$res = $conn->query("SELECT * FROM teachers WHERE is_principal=0");
+$teachers = [];
+while ($r = $res->fetch_assoc()) $teachers[] = $r;
+usort($teachers, function ($a, $b) use ($rankOrder) {
+    $ra = $rankOrder[$a['career_level'] ?? ''] ?? 99;
+    $rb = $rankOrder[$b['career_level'] ?? ''] ?? 99;
+    return $ra !== $rb ? $ra - $rb : strcmp($a['teacher_name'], $b['teacher_name']);
+});
+$teaching    = array_values(array_filter($teachers, fn($t) => ($t['category'] ?? 'Teaching') === 'Teaching'));
+$nonTeaching = array_values(array_filter($teachers, fn($t) => ($t['category'] ?? 'Teaching') === 'Non-Teaching'));
+
+$phRes = $conn->query("SELECT * FROM principal_history ORDER BY replaced_date DESC");
+$principalHistory = [];
+while ($r = $phRes->fetch_assoc()) $principalHistory[] = $r;
+
+// Stats
+$totalPers   = count($teachers) + ($principal ? 1 : 0);
+$teachingCnt = count($teaching) + ($principal ? 1 : 0);
+$ntCnt       = count($nonTeaching);
+$pgCnt       = count(array_filter($teachers, fn($t) => in_array($t['teacher_qualification'] ?? '', ['post-graduate', 'masteral', 'doctoral'])));
+
+// Table 1 position counts
+$posCounts = [];
+foreach ($teachers as $t) {
+    $cl = $t['career_level'] ?? 'Unknown';
+    $posCounts[$cl] = ($posCounts[$cl] ?? 0) + 1;
+}
+if ($principal) {
+    $pcl = $principal['career_level'] ?? 'School Principal I';
+    $posCounts[$pcl] = ($posCounts[$pcl] ?? 0) + 1;
+}
+$pRanks = ['School Principal I', 'School Principal II', 'School Principal III', 'Principal I', 'Principal II', 'Principal III'];
+$tRanks = ['Master Teacher IV', 'Master Teacher III', 'Master Teacher II', 'Master Teacher I', 'Head Teacher III', 'Head Teacher II', 'Head Teacher I', 'Teacher III', 'Teacher II', 'Teacher I'];
+$t1Pos  = [];
+foreach (array_merge($pRanks, $tRanks) as $pos) {
+    if (isset($posCounts[$pos])) $t1Pos[$pos] = $posCounts[$pos];
+}
+foreach ($posCounts as $pos => $cnt) {
+    if (!isset($t1Pos[$pos])) $t1Pos[$pos] = $cnt;
+}
+
+$educMap = [
+    'bachelor'        => "Bachelor's Degree",
+    'bachelors-units' => "Bachelor's w/ PG Units",
+    'post-graduate'   => "Masters (Unit)",
+    'masteral'        => "Master's Degree",
+    'doctoral'        => "Doctoral Degree",
+    'lac'             => 'LAC',
+    'k12'             => 'K-12',
+    'content'         => 'Content',
+    'others'          => 'Others',
+];
+?>
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <title>Teacher Information | BUNHS Admin</title>
+    <link rel="stylesheet" href="admin_assets/cs/admin_style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* ── Root ── */
+        :root {
+            --tp: #8a9a5b;
+            --ts: #10b981;
+            --tp-lt: rgba(138, 154, 91, .10);
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: #f1f5f0;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* ── Layout: clear the fixed sidebar (260px) and fixed topbar (70px) ── */
+        .page-content {
+            margin-left: 0;
+            /* sidebar width */
+            margin-top: 70px;
+            /* topbar height */
+            padding: 24px 28px;
+            min-height: calc(100vh - 70px);
+            box-sizing: border-box;
+        }
+
+        /* Fallback for narrower viewports where sidebar collapses */
+        @media (max-width: 900px) {
+            .page-content {
+                margin-left: 0;
+                margin-top: 60px;
+                padding: 16px;
+            }
+        }
+
+        /* Header */
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 16px;
+            position: relative;
+            /* stacking context so buttons are always on top */
+            z-index: 10;
+        }
+
+        .page-header h2 {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text-primary, #111);
+            margin: 0;
+        }
+
+        .page-header p {
+            font-size: 14px;
+            color: var(--text-secondary, #6b7280);
+            margin: 4px 0 0;
+        }
+
+        .hdr-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .add-btn {
+            border: none;
+            border-radius: 10px;
+            padding: 11px 18px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all .2s;
+        }
+
+        .add-btn.g {
+            background: linear-gradient(135deg, var(--tp), var(--ts));
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(138, 154, 91, .30);
+        }
+
+        .add-btn.o {
+            background: linear-gradient(135deg, #d97706, #fbbf24);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(217, 119, 6, .30);
+        }
+
+        .add-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        /* Alerts */
+        .alert-c {
+            padding: 0 0 16px;
+        }
+
+        .alert {
+            padding: 14px 20px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .alert-s {
+            background: rgba(16, 185, 129, .10);
+            color: #065f46;
+            border: 1px solid rgba(16, 185, 129, .20);
+        }
+
+        .alert-d {
+            background: rgba(239, 68, 68, .10);
+            color: #991b1b;
+            border: 1px solid rgba(239, 68, 68, .20);
+        }
+
+        /* Stats */
+        .sg {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .sc {
+            background: #fff;
+            border-radius: 14px;
+            padding: 18px 20px;
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, .07);
+            border: 1px solid #e5e7eb;
+            position: relative;
+            overflow: hidden;
+            transition: transform .22s;
+        }
+
+        .sc:hover {
+            transform: translateY(-3px);
+        }
+
+        .sc::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            border-radius: 14px 14px 0 0;
+        }
+
+        .sc.grn::before {
+            background: linear-gradient(90deg, #16a34a, #22c55e);
+        }
+
+        .sc.blu::before {
+            background: linear-gradient(90deg, #2563eb, #60a5fa);
+        }
+
+        .sc.org::before {
+            background: linear-gradient(90deg, #d97706, #fbbf24);
+        }
+
+        .sc.pur::before {
+            background: linear-gradient(90deg, #7c3aed, #a78bfa);
+        }
+
+        .si {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 18px;
+        }
+
+        .si.grn {
+            background: #dcfce7;
+            color: #16a34a;
+        }
+
+        .si.blu {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+
+        .si.org {
+            background: #fef3c7;
+            color: #d97706;
+        }
+
+        .si.pur {
+            background: #ede9fe;
+            color: #7c3aed;
+        }
+
+        .slbl {
+            font-size: 11.5px;
+            color: #9ca3af;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .6px;
+            margin-bottom: 5px;
+        }
+
+        .sval {
+            font-size: 26px;
+            font-weight: 700;
+            color: #111827;
+            line-height: 1.1;
+        }
+
+        .ssub {
+            font-size: 11.5px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+
+        /* SF7 Wrapper */
+        .sf7w {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, .07);
+            overflow: hidden;
+            margin-bottom: 24px;
+        }
+
+        .sf7tb {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            border-bottom: 1px solid #e5e7eb;
+            background: linear-gradient(135deg, rgba(138, 154, 91, .04), rgba(16, 185, 129, .04));
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .sf7tb h3 {
+            margin: 0;
+            font-size: 17px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .pbtn {
+            background: linear-gradient(135deg, var(--tp), var(--ts));
+            color: #fff;
+            border: none;
+            border-radius: 9px;
+            padding: 10px 18px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        .sscroll {
+            overflow-x: auto;
+            padding: 20px;
+        }
+
+        .sdlbl {
+            background: linear-gradient(135deg, rgba(138, 154, 91, .07), rgba(16, 185, 129, .07));
+            border-bottom: 2px solid #c5cfe0;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sdlbl h4 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 700;
+            color: #1e3a2f;
+        }
+
+        /* ══ TABLE 1 — SF7 Header ══ */
+
+        .t1wrap {
+            font-family: Arial, sans-serif;
+            font-size: 11px;
+            color: #111;
+            background: #fff;
+            min-width: 1100px;
+            width: 100%;
+        }
+
+        /* Header outer table */
+        .t1htable {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            font-family: Arial, sans-serif;
+            font-size: 11px;
+            color: #111;
+            background: #fff;
+        }
+
+        .t1htable td {
+            border: 1px solid #111;
+            vertical-align: middle;
+            background: #fff;
+            padding: 0;
+        }
+
+        /* Logo cell — spans all header rows */
+        .t1logo {
+            width: 90px;
+            text-align: center;
+            padding: 6px 4px;
+            vertical-align: middle;
+        }
+
+        .t1logo img {
+            width: 76px;
+            height: 76px;
+            object-fit: contain;
+        }
+
+        .t1lph {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            border: 1.5px solid #aaa;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: 600;
+            color: #666;
+            background: #f9f9f9;
+        }
+
+        /* Title cell */
+        .t1title {
+            text-align: center;
+            font-size: 15px;
+            font-weight: 800;
+            padding: 8px 12px 2px;
+            border-bottom: none !important;
+            line-height: 1.3;
+        }
+
+        /* Subtitle cell */
+        .t1sub {
+            font-size: 10px;
+            padding: 2px 12px 7px;
+            color: #222;
+            line-height: 1.4;
+            border-top: none !important;
+        }
+
+        /* Field cells: label + boxed value */
+        .t1field {
+            padding: 4px 7px 4px 7px;
+            vertical-align: middle;
+        }
+
+        .t1lbl {
+            font-weight: 700;
+            font-size: 10.5px;
+            white-space: nowrap;
+            display: block;
+            line-height: 1.3;
+            margin-bottom: 2px;
+        }
+
+        .t1val {
+            font-size: 11px;
+            font-weight: 400;
+            border: 1px solid #555;
+            padding: 1px 6px;
+            line-height: 1.6;
+            display: block;
+            background: #fff;
+        }
+
+        .t1val-bold {
+            font-weight: 700;
+        }
+
+        /* Label-only cell (School Name label on left) */
+        .t1label-only {
+            padding: 4px 7px;
+            font-weight: 700;
+            font-size: 10.5px;
+            vertical-align: middle;
+            white-space: nowrap;
+            width: 90px;
+        }
+
+        /* Banner row */
+        .t1banrow {
+            display: flex;
+            border-top: 1px solid #111;
+            border-bottom: 1px solid #111;
+        }
+
+        .t1ban {
+            flex: 1;
+            font-weight: 700;
+            font-size: 10.5px;
+            text-align: center;
+            padding: 5px 8px;
+            border-right: 1px solid #111;
+            line-height: 1.3;
+        }
+
+        .t1ban:last-child {
+            border-right: none;
+        }
+
+        /* Data table */
+        .t1 {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: Arial, sans-serif;
+            font-size: 11px;
+            color: #111;
+            table-layout: fixed;
+            background: #fff;
+        }
+
+        .t1 td {
+            border: 1px solid #111;
+            padding: 4px 6px;
+            vertical-align: middle;
+            line-height: 1.4;
+            background: #fff;
+        }
+
+        .t1ch {
+            font-weight: 700;
+            font-size: 10px;
+            text-align: center;
+            vertical-align: middle;
+            line-height: 1.3;
+            padding: 5px 4px;
+        }
+
+        .t1chlt {
+            font-weight: 400;
+            font-size: 9px;
+            display: block;
+            margin-top: 2px;
+            font-style: italic;
+        }
+
+        .t1dr td {
+            padding: 5px 6px;
+            font-size: 11px;
+            height: 28px;
+        }
+
+        .t1pos {
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            text-align: center;
+        }
+
+        .t1num {
+            text-align: center;
+            font-weight: 600;
+            font-size: 11px;
+        }
+
+        .t1appt {
+            font-size: 10.5px;
+            text-transform: uppercase;
+            text-align: center;
+        }
+
+        .t1fund {
+            font-size: 10.5px;
+            text-align: center;
+        }
+
+        .t1tot td {
+            font-weight: 800;
+            font-size: 11px;
+            padding: 5px 6px;
+        }
+
+        /* ══ TABLE 2 — Exact SF7 layout ══
+   Columns (25 total + actions):
+   c1=EmpNo  c2-c3=Name  c4=Sex  c5=Fund
+   c6-c7=Position  c8=ApptStatus
+   c9-c10=Educ  c11-c12=Major  c13=Advisory
+   c14=Subject  c15=Gr  c16=Section
+   c17=M  c18=T  c19=W  c20=TH  c21=F
+   c22=TimeStart  c23=TimeEnd  c24=Mins
+   c25=Actions(no-print)
+══ */
+        .sf7t {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: Arial, Calibri, sans-serif;
+            font-size: 8.5px;
+            min-width: 1680px;
+            color: #111;
+        }
+
+        .sf7t td {
+            border: 1px solid #555;
+            padding: 3px 4px;
+            vertical-align: middle;
+            line-height: 1.35;
+        }
+
+        /* Header rows */
+        .sf7t .r-h1 td {
+            background: #c5cfe0;
+            font-weight: 800;
+            font-size: 8px;
+            text-align: center;
+            text-transform: uppercase;
+            vertical-align: middle;
+            padding: 4px 3px;
+            letter-spacing: .2px;
+        }
+
+        .sf7t .r-h2 td {
+            background: #dde3ef;
+            font-weight: 700;
+            font-size: 7.5px;
+            text-align: center;
+            text-transform: uppercase;
+            vertical-align: middle;
+            padding: 3px 2px;
+        }
+
+        /* Personnel block cells */
+        .sf7t .c-id {
+            font-size: 7.5px;
+            text-align: center;
+            color: #333;
+            white-space: nowrap;
+        }
+
+        .sf7t .c-nm {
+            font-weight: 700;
+            font-size: 8px;
+            text-transform: uppercase;
+            vertical-align: top;
+            padding-top: 5px !important;
+            line-height: 1.4;
+        }
+
+        .sf7t .c-sx {
+            text-align: center;
+            font-size: 8px;
+        }
+
+        .sf7t .c-fd {
+            text-align: center;
+            font-size: 7.5px;
+        }
+
+        .sf7t .c-pos {
+            font-weight: 700;
+            font-size: 8px;
+            text-transform: uppercase;
+            line-height: 1.3;
+        }
+
+        .sf7t .c-ap {
+            font-size: 7.5px;
+            text-transform: uppercase;
+            line-height: 1.3;
+        }
+
+        .sf7t .c-ed {
+            font-size: 7.5px;
+            line-height: 1.3;
+        }
+
+        .sf7t .c-mj {
+            font-weight: 600;
+            font-size: 8px;
+            text-transform: uppercase;
+            line-height: 1.3;
+        }
+
+        .sf7t .c-adv {
+            text-align: center;
+            font-size: 7.5px;
+        }
+
+        .sf7t .c-sb {
+            font-size: 7.5px;
+            font-weight: 600;
+            line-height: 1.3;
+        }
+
+        .sf7t .c-gr {
+            text-align: center;
+            font-size: 7.5px;
+        }
+
+        .sf7t .c-sec {
+            font-size: 7.5px;
+        }
+
+        .sf7t .c-day {
+            text-align: center;
+            font-size: 7.5px;
+            font-weight: 700;
+        }
+
+        .sf7t .c-tm {
+            text-align: center;
+            font-size: 7px;
+            white-space: nowrap;
+        }
+
+        .sf7t .c-mn {
+            text-align: right;
+            font-size: 7.5px;
+            font-weight: 700;
+            padding-right: 5px !important;
+        }
+
+        .sf7t .c-act {
+            text-align: center;
+            white-space: nowrap;
+            padding: 3px !important;
+        }
+
+        /* Thick top border between persons */
+        .sf7t .pfirst td {
+            border-top: 2.5px solid #222 !important;
+        }
+
+        /* Total row per person */
+        .sf7t .ptot td {
+            background: #f5f5f5;
+            font-weight: 800;
+            font-size: 7.5px;
+            border-top: 1.5px solid #888;
+        }
+
+        /* Non-teaching section */
+        .sf7t .nt-hdr td {
+            background: #c5cfe0;
+            font-weight: 800;
+            font-size: 8px;
+            text-align: left;
+            padding: 5px 6px;
+            text-transform: uppercase;
+        }
+
+        .sf7t .nt-ch td {
+            background: #dde3ef;
+            font-weight: 700;
+            font-size: 7.5px;
+            text-align: center;
+            text-transform: uppercase;
+            padding: 4px 3px;
+        }
+
+        .sf7t .nt-r td {
+            background: #fafafa;
+            font-size: 8px;
+            padding: 4px 5px;
+        }
+
+        /* Action buttons */
+        .ab {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: all .2s;
+            text-decoration: none;
+            margin: 1px;
+        }
+
+        .ab.e {
+            background: rgba(59, 130, 246, .12);
+            color: #3b82f6;
+        }
+
+        .ab.e:hover {
+            background: #3b82f6;
+            color: #fff;
+        }
+
+        .ab.d {
+            background: rgba(239, 68, 68, .12);
+            color: #ef4444;
+        }
+
+        .ab.d:hover {
+            background: #ef4444;
+            color: #fff;
+        }
+
+        /* History */
+        .hw {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, .07);
+            overflow: hidden;
+            margin-bottom: 24px;
+            border-left: 4px solid #d97706;
+        }
+
+        .hh {
+            padding: 14px 20px;
+            background: linear-gradient(135deg, rgba(217, 119, 6, .06), rgba(251, 191, 36, .06));
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+        }
+
+        .hh h4 {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 700;
+            color: #92400e;
+            flex: 1;
+        }
+
+        .hb {
+            padding: 16px 20px;
+            display: none;
+        }
+
+        .hb.open {
+            display: block;
+        }
+
+        .htbl {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+
+        .htbl th {
+            background: #fef3c7;
+            padding: 7px 8px;
+            font-weight: 700;
+            border: 1px solid #e5e7eb;
+        }
+
+        .htbl td {
+            padding: 6px 8px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .htbl tr:nth-child(even) td {
+            background: #fffbf0;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 10000;
+            inset: 0;
+            background: rgba(0, 0, 0, .5);
+            backdrop-filter: blur(4px);
+        }
+
+        .mc {
+            background: #fff;
+            margin: 1% auto;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, .30);
+            width: 95%;
+            max-width: 940px;
+            max-height: 96vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            animation: si .3s;
+        }
+
+        @keyframes si {
+            from {
+                transform: translateY(-30px);
+                opacity: 0
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1
+            }
+        }
+
+        .mhd {
+            padding: 16px 22px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .mhd.grn {
+            background: linear-gradient(135deg, rgba(138, 154, 91, .04), rgba(16, 185, 129, .04));
+        }
+
+        .mhd.gld {
+            background: linear-gradient(135deg, rgba(217, 119, 6, .06), rgba(251, 191, 36, .06));
+        }
+
+        .mhd h3 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .mhd h3 i {
+            margin-right: 8px;
+        }
+
+        .xbtn {
+            width: 34px;
+            height: 34px;
+            border: none;
+            background: #f3f4f6;
+            border-radius: 9px;
+            cursor: pointer;
+            font-size: 17px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all .2s;
+        }
+
+        .xbtn:hover {
+            background: #ef4444;
+            color: #fff;
+        }
+
+        .msc {
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .mb {
+            padding: 18px 22px;
+        }
+
+        /* Form */
+        .fsec {
+            margin-bottom: 16px;
+        }
+
+        .fst {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .6px;
+            color: var(--tp);
+            border-bottom: 1.5px solid var(--tp-lt);
+            padding-bottom: 5px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .fr {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .fr.c3 {
+            grid-template-columns: 1fr 1fr 1fr;
+        }
+
+        .fr.c1 {
+            grid-template-columns: 1fr;
+        }
+
+        .fg {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .fg label {
+            font-weight: 600;
+            font-size: 12px;
+            color: #374151;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .fg label i {
+            font-size: 11px;
+            color: var(--tp);
+        }
+
+        .fg input,
+        .fg select,
+        .fg textarea {
+            padding: 8px 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 13px;
+            transition: all .2s;
+            background: #fff;
+            font-family: inherit;
+        }
+
+        .fg input:focus,
+        .fg select:focus {
+            outline: none;
+            border-color: var(--tp);
+            box-shadow: 0 0 0 3px rgba(138, 154, 91, .15);
+        }
+
+        /* Schedule table inside modal */
+        .stbl {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11.5px;
+            margin-top: 6px;
+        }
+
+        .stbl th {
+            background: #dde3ef;
+            padding: 6px 5px;
+            text-align: center;
+            font-size: 10.5px;
+            font-weight: 700;
+            border: 1px solid #c5cfe0;
+        }
+
+        .stbl td {
+            padding: 3px 3px;
+            border: 1px solid #e5e7eb;
+            vertical-align: middle;
+        }
+
+        .stbl input[type=text],
+        .stbl input[type=number],
+        .stbl input[type=time] {
+            padding: 4px 6px;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 5px;
+            font-size: 11px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .stbl input[type=text]:focus,
+        .stbl input[type=number]:focus,
+        .stbl input[type=time]:focus {
+            outline: none;
+            border-color: var(--tp);
+        }
+
+        .stbl input[type=checkbox] {
+            width: 14px;
+            height: 14px;
+            cursor: pointer;
+            margin: 0 auto;
+            display: block;
+        }
+
+        .sadd {
+            background: var(--tp);
+            color: #fff;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 7px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .sdel {
+            background: rgba(239, 68, 68, .12);
+            color: #ef4444;
+            border: none;
+            padding: 3px 8px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .sdel:hover {
+            background: #ef4444;
+            color: #fff;
+        }
+
+        /* Principal toggle */
+        .ptog {
+            background: linear-gradient(135deg, rgba(217, 119, 6, .08), rgba(251, 191, 36, .08));
+            border: 1.5px solid rgba(217, 119, 6, .25);
+            border-radius: 10px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .tg {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+
+        .tg input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .tgsl {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background: #cbd5e1;
+            border-radius: 24px;
+            transition: .3s;
+        }
+
+        .tgsl:before {
+            content: '';
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            left: 3px;
+            bottom: 3px;
+            background: #fff;
+            border-radius: 50%;
+            transition: .3s;
+        }
+
+        .tg input:checked+.tgsl {
+            background: #d97706;
+        }
+
+        .tg input:checked+.tgsl:before {
+            transform: translateX(20px);
+        }
+
+        /* Footer */
+        .mft {
+            padding: 14px 22px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            background: #f9fafb;
+            flex-shrink: 0;
+        }
+
+        .cbtn {
+            background: #fff;
+            color: #6b7280;
+            border: 2px solid #e5e7eb;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .sbtn {
+            color: #fff;
+            border: none;
+            padding: 10px 22px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .sbtn.grn {
+            background: linear-gradient(135deg, var(--tp), var(--ts));
+        }
+
+        .sbtn.gld {
+            background: linear-gradient(135deg, #d97706, #fbbf24);
+        }
+
+        .req {
+            color: #ef4444;
+        }
+
+        #delf {
+            display: none;
+        }
+
+        /* Tooltip */
+        [data-tip] {
+            position: relative;
+        }
+
+        [data-tip]::after {
+            content: attr(data-tip);
+            position: absolute;
+            bottom: calc(100% + 6px);
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 4px 9px;
+            background: #1f2937;
+            color: #fff;
+            font-size: 11px;
+            border-radius: 5px;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            transition: all .2s;
+            z-index: 100;
+        }
+
+        [data-tip]:hover::after {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* Print */
+        @media print {
+            body {
+                background: #fff;
+            }
+
+            .page-header,
+            .sg,
+            .sf7tb,
+            .sdlbl,
+            .topbar,
+            .sidebar,
+            .no-print,
+            .hw {
+                display: none !important;
+            }
+
+            .sf7w {
+                border-radius: 0;
+                box-shadow: none;
+            }
+
+            .sscroll {
+                padding: 0;
+                overflow: visible;
+            }
+
+            .sf7t {
+                min-width: unset;
+                font-size: 7px;
+            }
+
+            .t1wrap {
+                min-width: unset;
+            }
+
+            .t1htable {
+                min-width: unset;
+            }
+
+            .t1 {
+                min-width: unset;
+            }
+        }
+
+        @media(max-width:768px) {
+
+            .fr,
+            .fr.c3 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <?php include 'admin_nav.php'; ?>
+    <div class="page-content">
+
+        <!-- Header -->
+        <div class="page-header">
+            <div>
+                <h2><i class="fas fa-chalkboard-teacher" style="color:var(--tp);margin-right:8px;"></i>Teacher Management</h2>
+                <p>SF7 Personnel Assignment List &amp; Basic Profile</p>
+            </div>
+            <div class="hdr-actions">
+                <button id="btn-principal" class="add-btn o"><i class="fas fa-crown"></i> Add Principal</button>
+                <button id="btn-teacher" class="add-btn g"><i class="fas fa-plus"></i> Add Personnel</button>
+            </div>
+        </div>
+
+        <!-- Alerts -->
+        <?php if (isset($_SESSION['success'])): ?>
+            <div class="alert-c">
+                <div class="alert alert-s"><i class="fas fa-check-circle"></i> <?= h($_SESSION['success']);
+                                                                                unset($_SESSION['success']); ?></div>
+            </div>
+        <?php endif; ?>
+        <?php if (isset($_SESSION['error'])): ?>
+            <div class="alert-c">
+                <div class="alert alert-d"><i class="fas fa-exclamation-circle"></i> <?= h($_SESSION['error']);
+                                                                                        unset($_SESSION['error']); ?></div>
+            </div>
+        <?php endif; ?>
+
+        <!-- Stats -->
+        <div class="sg">
+            <div class="sc grn">
+                <div class="si grn"><i class="fas fa-users"></i></div>
+                <div>
+                    <div class="slbl">Total Personnel</div>
+                    <div class="sval"><?= $totalPers ?></div>
+                    <div class="ssub">All registered staff</div>
+                </div>
+            </div>
+            <div class="sc blu">
+                <div class="si blu"><i class="fas fa-chalkboard"></i></div>
+                <div>
+                    <div class="slbl">Teaching</div>
+                    <div class="sval"><?= $teachingCnt ?></div>
+                    <div class="ssub">Incl. principal</div>
+                </div>
+            </div>
+            <div class="sc org">
+                <div class="si org"><i class="fas fa-graduation-cap"></i></div>
+                <div>
+                    <div class="slbl">Post-Graduate</div>
+                    <div class="sval"><?= $pgCnt ?></div>
+                    <div class="ssub">Advanced degree</div>
+                </div>
+            </div>
+            <div class="sc pur">
+                <div class="si pur"><i class="fas fa-history"></i></div>
+                <div>
+                    <div class="slbl">Past Principals</div>
+                    <div class="sval"><?= count($principalHistory) ?></div>
+                    <div class="ssub">History records</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ SF7 ══ -->
+        <div class="sf7w">
+
+            <div class="sf7tb no-print">
+                <h3><i class="fas fa-file-alt" style="color:var(--tp);"></i> School Form 7 (SF7) – School Personnel Assignment List &amp; Basic Profile</h3>
+                <button class="pbtn" onclick="window.print()"><i class="fas fa-print"></i> Print SF7</button>
+            </div>
+
+            <!-- TABLE 1 -->
+            <div class="sscroll" style="padding-bottom:0;">
+                <div class="t1wrap">
+
+                    <!-- ══ Header table ══ -->
+                    <!--
+                        Structure (matches reference image exactly):
+                        Row1: [Logo rowspan=4] | [Title colspan=5 — no bottom border]
+                        Row2:                  | [Subtitle colspan=5 — no top border]
+                        Row3:                  | [SchoolID] | [Region] | [Division] | [District+SchoolYear rowspan=2 — inner table]
+                        Row4:                  | [SchoolName label] | [SchoolName value colspan=3]
+                    -->
+                    <table class="t1htable" style="border-collapse:collapse; width:100%; table-layout:fixed;">
+                        <colgroup>
+                            <col style="width:90px"> <!-- logo -->
+                            <col style="width:140px"> <!-- School ID / School Name label -->
+                            <col style="width:90px"> <!-- Region / School Name value start -->
+                            <col style="width:200px"> <!-- Division / School Name value cont -->
+                            <col style="width:130px"> <!-- School Name value cont -->
+                            <col style="width:150px"> <!-- District + School Year (right block) -->
+                        </colgroup>
+
+                        <!-- Row 1: Logo + Title -->
+                        <tr>
+                            <td class="t1logo" rowspan="4" style="border-right:1px solid #111; text-align:center; vertical-align:middle;">
+                                <img src="../assets/img/DepED logo circle.png" alt="DepEd"
+                                    onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex';">
+                                <div class="t1lph" style="display:none;">DepEd<br>Logo</div>
+                            </td>
+                            <td colspan="5" class="t1title" style="border-bottom:none;">
+                                School Form 7 (SF7) School Personnel Assignment List and Basic Profile
+                            </td>
+                        </tr>
+
+                        <!-- Row 2: Subtitle -->
+                        <tr>
+                            <td colspan="5" class="t1sub" style="border-top:none;">
+                                (This replaces Form 12-Monthly Status Report for Teachers, Form 19-Assignment List,
+                                Form 29-Teacher Program and Form 31-Summary Information of Teachers)
+                            </td>
+                        </tr>
+
+                        <!-- Row 3: School ID | Region | Division | [District + School Year right block rowspan=2] -->
+                        <tr>
+                            <td class="t1field">
+                                <span class="t1lbl">School ID</span>
+                                <span class="t1val">306332</span>
+                            </td>
+                            <td class="t1field" style="border-left:none;">
+                                <span class="t1lbl">Region</span>
+                                <span class="t1val">V</span>
+                            </td>
+                            <td class="t1field" colspan="2" style="border-left:none;">
+                                <span class="t1lbl">Division</span>
+                                <span class="t1val">LEGAZPI CITY</span>
+                            </td>
+                            <!-- Right block: District on top, School Year below, shares rowspan=2 with School Name row -->
+                            <td rowspan="2" style="padding:0; vertical-align:top; border-left:none;">
+                                <table style="width:100%; height:100%; border-collapse:collapse; table-layout:fixed;">
+                                    <tr>
+                                        <td class="t1field" style="border:none; border-bottom:1px solid #111; width:50%;">
+                                            <span class="t1lbl">District</span>
+                                            <span class="t1val">9A</span>
+                                        </td>
+                                        <td class="t1field" style="border:none; border-bottom:1px solid #111; border-left:1px solid #111;">
+                                            <span class="t1lbl">School Year</span>
+                                            <span class="t1val">2025-2026</span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="2" style="border:none; height:34px;"></td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+
+                        <!-- Row 4: School Name label + value -->
+                        <tr>
+                            <td class="t1label-only" style="border-top:none; border-right:none;">
+                                School Name
+                            </td>
+                            <td colspan="3" style="padding:4px 7px; border-top:none; border-left:none;">
+                                <span class="t1val t1val-bold">BUYOAN NATIONAL HIGH SCHOOL</span>
+                            </td>
+                        </tr>
+
+                    </table><!-- /.t1htable -->
+
+                    <!-- ── Banner row: (A) (B) (C) ── -->
+                    <div class="t1banrow">
+                        <div class="t1ban" style="flex:0 0 264px;">
+                            (A) Nationally-Funded Teaching &amp; Teaching Related Items
+                        </div>
+                        <div class="t1ban" style="flex:0 0 254px;">
+                            (B) Nationally-Funded <u>Non Teaching</u> Items
+                        </div>
+                        <div class="t1ban" style="flex:1;">
+                            (C) Other Appointments and Funding Source
+                        </div>
+                    </div>
+
+                    <!-- ── Data table: column headers + data rows ── -->
+                    <table class="t1">
+                        <colgroup>
+                            <col style="width:90px">
+                            <col style="width:175px">
+                            <col style="width:80px">
+                            <col style="width:175px">
+                            <col style="width:80px">
+                            <col style="width:145px">
+                            <col style="width:155px">
+                            <col style="width:95px">
+                            <col style="width:72px">
+                            <col style="width:88px">
+                            <col class="no-print" style="width:82px">
+                        </colgroup>
+                        <tr>
+                            <td colspan="2" class="t1ch" rowspan="2">Title of Plantilla Position<span class="t1chlt">(as it appears in the appointment document/PSIPOP)</span></td>
+                            <td class="t1ch" rowspan="2">No. of<br>Incumbent</td>
+                            <td class="t1ch" rowspan="2">Title of Plantilla Position<span class="t1chlt">(as it appears in the appointment document/PSIPOP)</span></td>
+                            <td class="t1ch" rowspan="2">No. of<br>Incumbent</td>
+                            <td class="t1ch" rowspan="2">Title of Plantilla Position<span class="t1chlt">(as it appears in the contract/document Teacher, Clerk, Security, Guard, Driver, Etc.)</span></td>
+                            <td class="t1ch" rowspan="2">Appointment<span class="t1chlt">(Contractual, Substitute, Volunteer, others specify)</span></td>
+                            <td class="t1ch" rowspan="2">Fund Source<span class="t1chlt">(SEF, PTA, NGO's, etc.)</span></td>
+                            <td class="t1ch" colspan="2">Number of incumbent</td>
+                            <td class="t1ch no-print" rowspan="2">Actions</td>
+                        </tr>
+                        <tr>
+                            <td class="t1ch">Teaching</td>
+                            <td class="t1ch">Non-<br>Teaching</td>
+                        </tr>
+
+                        <?php
+                        $ntList  = array_values($nonTeaching);
+                        $aPosArr = array_keys($t1Pos);
+                        $maxR    = max(count($t1Pos), count($ntList), 1);
+                        for ($ri = 0; $ri < $maxR; $ri++):
+                            $aT = $aPosArr[$ri] ?? '';
+                            $aC = $aT ? $t1Pos[$aT] : '';
+                            $nt = $ntList[$ri] ?? null;
+                        ?>
+                            <tr class="t1dr">
+                                <td colspan="2" class="t1pos"><?= h($aT) ?></td>
+                                <td class="t1num"><?= $aC ?></td>
+                                <td></td>
+                                <td></td>
+                                <td class="t1pos"><?= $nt ? h($nt['nt_position'] ?: $nt['career_level']) : '' ?></td>
+                                <td class="t1appt"><?= $nt ? h($nt['nt_appt_type'] ?: $nt['employment_status']) : '' ?></td>
+                                <td class="t1fund"><?= $nt ? h($nt['nt_fund_source'] ?: $nt['funding_source']) : '' ?></td>
+                                <td class="t1num"><?= $aC && !in_array($aT, array_column($nonTeaching, 'career_level')) ? $aC : '' ?></td>
+                                <td class="t1num"><?= $nt ? 1 : '' ?></td>
+                                <td class="no-print"></td>
+                            </tr>
+                        <?php endfor; ?>
+                        <?php for ($x = 0; $x < 3; $x++): ?>
+                            <tr class="t1dr">
+                                <td colspan="2"></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td class="no-print"></td>
+                            </tr>
+                        <?php endfor; ?>
+                        <tr class="t1tot">
+                            <td colspan="2" style="text-align:center;">TOTAL</td>
+                            <td class="t1num"><?= array_sum($t1Pos) ?></td>
+                            <td></td>
+                            <td class="t1num">0</td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td class="t1num"><?= $teachingCnt ?></td>
+                            <td class="t1num"><?= $ntCnt ?></td>
+                            <td class="no-print"></td>
+                        </tr>
+                    </table>
+                </div><!-- /.t1wrap -->
+            </div>
+
+            <div class="sdlbl no-print" style="margin-top:4px;">
+                <i class="fas fa-users" style="color:var(--tp);font-size:15px;"></i>
+                <h4>Personnel Assignment Details</h4>
+                <span>Daily program &amp; subject assignments</span>
+            </div>
+            <hr style="border:none;border-top:2px dashed #d1d5db;margin:0 20px;" class="no-print">
+
+            <!-- ══ TABLE 2 — SF7 Personnel Assignment (exact layout) ══ -->
+            <div class="sscroll" style="padding-top:16px;">
+                <table class="sf7t">
+                    <colgroup>
+                        <col style="width:70px"> <!-- EmpNo -->
+                        <col style="width:85px"> <!-- Name part1 -->
+                        <col style="width:60px"> <!-- Name part2 -->
+                        <col style="width:42px"> <!-- Sex -->
+                        <col style="width:52px"> <!-- Fund -->
+                        <col style="width:78px"> <!-- Position1 -->
+                        <col style="width:58px"> <!-- Position2 -->
+                        <col style="width:72px"> <!-- ApptStatus -->
+                        <col style="width:82px"> <!-- Educ1 -->
+                        <col style="width:55px"> <!-- Educ2 -->
+                        <col style="width:62px"> <!-- Major1 -->
+                        <col style="width:58px"> <!-- Major2 -->
+                        <col style="width:55px"> <!-- Advisory -->
+                        <col style="width:95px"> <!-- Subject -->
+                        <col style="width:28px"> <!-- Gr -->
+                        <col style="width:68px"> <!-- Section -->
+                        <col style="width:18px"> <!-- M -->
+                        <col style="width:18px"> <!-- T -->
+                        <col style="width:18px"> <!-- W -->
+                        <col style="width:22px"> <!-- TH -->
+                        <col style="width:18px"> <!-- F -->
+                        <col style="width:56px"> <!-- TimeStart -->
+                        <col style="width:56px"> <!-- TimeEnd -->
+                        <col style="width:38px"> <!-- Mins -->
+                        <col class="no-print" style="width:60px"> <!-- Actions -->
+                    </colgroup>
+
+                    <!-- ═ Header row 1 ═ -->
+                    <tr class="r-h1">
+                        <td rowspan="2">Employee<br>Number</td>
+                        <td colspan="2" rowspan="2">Name<br><span style="font-size:6.5px;font-weight:400;">(Last, First, Middle)</span></td>
+                        <td rowspan="2">Sex</td>
+                        <td rowspan="2">Funding<br>Source</td>
+                        <td colspan="2" rowspan="2">Title of<br>Plantilla Position</td>
+                        <td rowspan="2">Appointment<br>Status</td>
+                        <td colspan="2" rowspan="2">Highest<br>Educational<br>Qualification</td>
+                        <td colspan="2" rowspan="2">Major /<br>Specialization</td>
+                        <td rowspan="2">Advisory<br>Class</td>
+                        <td colspan="11">Daily Program</td>
+                        <td class="no-print" rowspan="2">Actions</td>
+                    </tr>
+                    <!-- ═ Header row 2 ═ -->
+                    <tr class="r-h2">
+                        <td>Subject</td>
+                        <td>Gr</td>
+                        <td>Section</td>
+                        <td>M</td>
+                        <td>T</td>
+                        <td>W</td>
+                        <td>TH</td>
+                        <td>F</td>
+                        <td>Time<br>Start</td>
+                        <td>Time<br>End</td>
+                        <td>No. of<br>Mins</td>
+                    </tr>
+
+                    <?php
+                    // ════ PRINCIPAL ════
+                    if ($principal):
+                        $p = $principal;
+                        // Build name: LAST, FIRST MIDDLE
+                        if ($p['last_name']) {
+                            $pn = strtoupper($p['last_name']) . ', ' . strtoupper($p['first_name']);
+                            if ($p['middle_name']) $pn .= ' ' . strtoupper($p['middle_name']);
+                        } else {
+                            $pn = strtoupper($p['teacher_name']);
+                        }
+                        $pEduc = $educMap[$p['teacher_qualification'] ?? ''] ?? strtoupper($p['teacher_qualification'] ?? '');
+                        $pAppt = strtoupper($p['employment_status'] ?: 'REGULAR PERMANENT');
+                        $pPos  = strtoupper($p['career_level'] ?: 'SCHOOL PRINCIPAL I');
+                        $pMaj  = strtoupper($p['major'] ?: '');
+                        $pAdv  = $p['advisory_class'] ?: 'N/A';
+
+                        $pSch  = getScheds($conn, $p['teacher_id'], 'principal');
+                        // If no schedules yet, show one empty schedule row
+                        if (empty($pSch)) $pSch = [['subject' => '', 'grade' => '', 'section' => '', 'day_mon' => 0, 'day_tue' => 0, 'day_wed' => 0, 'day_thu' => 0, 'day_fri' => 0, 'time_start' => '', 'time_end' => '', 'minutes' => '']];
+                        $pCnt  = count($pSch);
+                        $pMins = array_sum(array_column($pSch, 'minutes'));
+                    ?>
+                        <?php foreach ($pSch as $si => $ps): $first = ($si === 0); ?>
+                            <tr class="<?= $first ? 'pfirst' : '' ?>">
+                                <?php if ($first): ?>
+                                    <td class="c-id" rowspan="<?= $pCnt ?>"><?= h($p['teacher_id']) ?></td>
+                                    <td colspan="2" class="c-nm" rowspan="<?= $pCnt ?>"><?= h($pn) ?></td>
+                                    <td class="c-sx" rowspan="<?= $pCnt ?>"><?= h($p['gender']) ?></td>
+                                    <td class="c-fd" rowspan="<?= $pCnt ?>">NATIONAL</td>
+                                    <td colspan="2" class="c-pos" rowspan="<?= $pCnt ?>"><?= h($pPos) ?></td>
+                                    <td class="c-ap" rowspan="<?= $pCnt ?>"><?= h($pAppt) ?></td>
+                                    <td colspan="2" class="c-ed" rowspan="<?= $pCnt ?>"><?= h($pEduc) ?></td>
+                                    <td colspan="2" class="c-mj" rowspan="<?= $pCnt ?>"><?= h($pMaj) ?></td>
+                                    <td class="c-adv" rowspan="<?= $pCnt ?>"><?= h($pAdv) ?></td>
+                                <?php endif; ?>
+                                <td class="c-sb"><?= h($ps['subject']) ?></td>
+                                <td class="c-gr"><?= h($ps['grade']) ?></td>
+                                <td class="c-sec"><?= h($ps['section']) ?></td>
+                                <td class="c-day"><?= $ps['day_mon'] ? 'M' : '' ?></td>
+                                <td class="c-day"><?= $ps['day_tue'] ? 'T' : '' ?></td>
+                                <td class="c-day"><?= $ps['day_wed'] ? 'W' : '' ?></td>
+                                <td class="c-day"><?= $ps['day_thu'] ? 'TH' : '' ?></td>
+                                <td class="c-day"><?= $ps['day_fri'] ? 'F' : '' ?></td>
+                                <td class="c-tm"><?= fmtTime($ps['time_start']) ?></td>
+                                <td class="c-tm"><?= fmtTime($ps['time_end']) ?></td>
+                                <td class="c-mn"><?= $ps['minutes'] ?: '' ?></td>
+                                <?php if ($first): ?>
+                                    <td class="c-act no-print" rowspan="<?= $pCnt ?>">
+                                        <a href="#" class="ab e"
+                                            data-type="principal" data-rid="<?= $p['id'] ?>"
+                                            data-id="<?= h($p['teacher_id']) ?>"
+                                            data-lastname="<?= h($p['last_name']) ?>" data-firstname="<?= h($p['first_name']) ?>"
+                                            data-middlename="<?= h($p['middle_name']) ?>" data-gender="<?= h($p['gender']) ?>"
+                                            data-careerlevel="<?= h($p['career_level']) ?>" data-employment="<?= h($p['employment_status']) ?>"
+                                            data-qual="<?= h($p['teacher_qualification']) ?>" data-major="<?= h($p['major']) ?>"
+                                            data-email="<?= h($p['teacher_email']) ?>" data-contact="<?= h($p['teacher_contact']) ?>"
+                                            data-advisory="<?= h($p['advisory_class']) ?>"
+                                            data-tip="Edit Principal"><i class="fas fa-pen"></i></a>
+                                        <a href="#" class="ab d"
+                                            data-type="principal" data-rid="<?= $p['id'] ?>"
+                                            data-tip="Remove"><i class="fas fa-trash"></i></a>
+                                    </td>
+                                <?php else: ?>
+                                    <!-- no actions cell for non-first rows (covered by rowspan) -->
+                                <?php endif; ?>
+                            </tr>
+                        <?php endforeach; ?>
+                        <!-- Total row for principal -->
+                        <tr class="ptot">
+                            <td colspan="22" style="text-align:right;padding-right:8px;">Total</td>
+                            <td class="c-mn"><?= $pMins ?: 0 ?></td>
+                            <td class="no-print"></td>
+                        </tr>
+                    <?php endif; ?>
+
+                    <?php
+                    // ════ TEACHING TEACHERS ════
+                    foreach ($teaching as $t):
+                        if ($t['last_name']) {
+                            $tn = strtoupper($t['last_name']) . ', ' . strtoupper($t['first_name']);
+                            if ($t['middle_name']) $tn .= ' ' . strtoupper($t['middle_name']);
+                        } else {
+                            $tn = strtoupper($t['teacher_name']);
+                        }
+                        $tEduc = $educMap[$t['teacher_qualification'] ?? ''] ?? strtoupper($t['teacher_qualification'] ?? '');
+                        $tAppt = strtoupper($t['employment_status'] ?: 'REGULAR PERMANENT');
+                        $tPos  = strtoupper($t['career_level'] ?: 'TEACHER I');
+                        $tMaj  = strtoupper($t['major'] ?: $t['teacher_subjects'] ?: '');
+                        $tAdv  = $t['advisory_class'] ?: 'N/A';
+                        $tFund = strtoupper($t['funding_source'] ?: 'NATIONAL');
+
+                        $tSch  = getScheds($conn, $t['teacher_id'], 'teacher');
+                        // Fall back to legacy single-row fields
+                        if (empty($tSch)) {
+                            $tSch = [[
+                                'subject'    => $t['subject_assigned'] ?: '',
+                                'grade'      => '',
+                                'section'    => $t['grade_section'] ?: '',
+                                'day_mon'    => $t['day_mon']    ?? 0,
+                                'day_tue'    => $t['day_tue']    ?? 0,
+                                'day_wed'    => $t['day_wed']    ?? 0,
+                                'day_thu'    => $t['day_thu']    ?? 0,
+                                'day_fri'    => $t['day_fri']    ?? 0,
+                                'time_start' => $t['time_start'] ?? '',
+                                'time_end'   => $t['time_end']   ?? '',
+                                'minutes'    => 0,
+                            ]];
+                        }
+                        $tCnt  = count($tSch);
+                        $tMins = array_sum(array_column($tSch, 'minutes'));
+                    ?>
+                        <?php foreach ($tSch as $si => $ts): $first = ($si === 0); ?>
+                            <tr class="<?= $first ? 'pfirst' : '' ?>">
+                                <?php if ($first): ?>
+                                    <td class="c-id" rowspan="<?= $tCnt ?>"><?= h($t['teacher_id']) ?></td>
+                                    <td colspan="2" class="c-nm" rowspan="<?= $tCnt ?>"><?= h($tn) ?></td>
+                                    <td class="c-sx" rowspan="<?= $tCnt ?>"><?= h($t['gender']) ?></td>
+                                    <td class="c-fd" rowspan="<?= $tCnt ?>"><?= h($tFund) ?></td>
+                                    <td colspan="2" class="c-pos" rowspan="<?= $tCnt ?>"><?= h($tPos) ?></td>
+                                    <td class="c-ap" rowspan="<?= $tCnt ?>"><?= h($tAppt) ?></td>
+                                    <td colspan="2" class="c-ed" rowspan="<?= $tCnt ?>"><?= h($tEduc) ?></td>
+                                    <td colspan="2" class="c-mj" rowspan="<?= $tCnt ?>"><?= h($tMaj) ?></td>
+                                    <td class="c-adv" rowspan="<?= $tCnt ?>"><?= h($tAdv) ?></td>
+                                <?php endif; ?>
+                                <td class="c-sb"><?= h($ts['subject']) ?></td>
+                                <td class="c-gr"><?= h($ts['grade']) ?></td>
+                                <td class="c-sec"><?= h($ts['section']) ?></td>
+                                <td class="c-day"><?= $ts['day_mon'] ? 'M' : '' ?></td>
+                                <td class="c-day"><?= $ts['day_tue'] ? 'T' : '' ?></td>
+                                <td class="c-day"><?= $ts['day_wed'] ? 'W' : '' ?></td>
+                                <td class="c-day"><?= $ts['day_thu'] ? 'TH' : '' ?></td>
+                                <td class="c-day"><?= $ts['day_fri'] ? 'F' : '' ?></td>
+                                <td class="c-tm"><?= fmtTime($ts['time_start']) ?></td>
+                                <td class="c-tm"><?= fmtTime($ts['time_end']) ?></td>
+                                <td class="c-mn"><?= $ts['minutes'] ?: '' ?></td>
+                                <?php if ($first): ?>
+                                    <td class="c-act no-print" rowspan="<?= $tCnt ?>">
+                                        <a href="#" class="ab e"
+                                            data-type="teacher" data-rid="<?= $t['id'] ?>"
+                                            data-id="<?= h($t['teacher_id']) ?>"
+                                            data-lastname="<?= h($t['last_name']) ?>" data-firstname="<?= h($t['first_name']) ?>"
+                                            data-middlename="<?= h($t['middle_name']) ?>" data-gender="<?= h($t['gender']) ?>"
+                                            data-careerlevel="<?= h($t['career_level']) ?>" data-employment="<?= h($t['employment_status']) ?>"
+                                            data-qual="<?= h($t['teacher_qualification']) ?>" data-major="<?= h($t['major']) ?>"
+                                            data-subj="<?= h($t['subject_assigned']) ?>" data-gradesec="<?= h($t['grade_section']) ?>"
+                                            data-room="<?= h($t['room_assignment']) ?>"
+                                            data-club="<?= h($t['club_role']) ?>" data-advisory="<?= h($t['advisory_class']) ?>"
+                                            data-ntpos="<?= h($t['nt_position']) ?>" data-ntappt="<?= h($t['nt_appt_type']) ?>"
+                                            data-ntfund="<?= h($t['nt_fund_source']) ?>" data-category="<?= h($t['category']) ?>"
+                                            data-funding="<?= h($t['funding_source']) ?>"
+                                            data-email="<?= h($t['teacher_email']) ?>" data-contact="<?= h($t['teacher_contact']) ?>"
+                                            data-tip="Edit"><i class="fas fa-pen"></i></a>
+                                        <a href="#" class="ab d"
+                                            data-type="teacher" data-rid="<?= $t['id'] ?>"
+                                            data-tip="Delete"><i class="fas fa-trash"></i></a>
+                                    </td>
+                                <?php else: ?>
+                                    <!-- no actions cell for non-first rows (covered by rowspan) -->
+                                <?php endif; ?>
+                            </tr>
+                        <?php endforeach; ?>
+                        <!-- Total row per teacher -->
+                        <tr class="ptot">
+                            <td colspan="22" style="text-align:right;padding-right:8px;">Total</td>
+                            <td class="c-mn"><?= $tMins ?: '' ?></td>
+                            <td class="no-print"></td>
+                        </tr>
+                    <?php endforeach; ?>
+
+                    <?php if (!empty($nonTeaching)): ?>
+                        <!-- ════ NON-TEACHING ════ -->
+                        <tr class="nt-hdr">
+                            <td colspan="25">JOB ORDER / CONTRACT OF SERVICE PERSONNEL</td>
+                        </tr>
+                        <tr class="nt-ch">
+                            <td>ID</td>
+                            <td colspan="2">Name</td>
+                            <td>Sex</td>
+                            <td>Fund Source</td>
+                            <td colspan="2">Position / Role</td>
+                            <td colspan="3">Appointment Type</td>
+                            <td colspan="13">Task / Assignment</td>
+                            <td class="no-print">Actions</td>
+                        </tr>
+                        <?php foreach ($nonTeaching as $nt): ?>
+                            <tr class="nt-r pfirst">
+                                <td class="c-id"><?= h($nt['teacher_id']) ?></td>
+                                <td colspan="2" class="c-nm">
+                                    <?php
+                                    if ($nt['last_name']) echo strtoupper($nt['last_name']) . ', ' . strtoupper($nt['first_name']) . ' ' . strtoupper($nt['middle_name']);
+                                    else echo strtoupper($nt['teacher_name']);
+                                    ?>
+                                </td>
+                                <td class="c-sx"><?= h($nt['gender']) ?></td>
+                                <td class="c-fd"><?= h($nt['nt_fund_source'] ?: $nt['funding_source']) ?></td>
+                                <td colspan="2" class="c-pos"><?= h($nt['nt_position'] ?: $nt['career_level']) ?></td>
+                                <td colspan="3" class="c-ap"><?= h($nt['nt_appt_type'] ?: $nt['employment_status']) ?></td>
+                                <td colspan="13" style="font-size:7.5px;"><?= h($nt['subject_assigned'] ?: $nt['club_role'] ?: 'General Duty — M T W TH F') ?></td>
+                                <td class="c-act no-print">
+                                    <a href="#" class="ab e"
+                                        data-type="teacher" data-rid="<?= $nt['id'] ?>"
+                                        data-id="<?= h($nt['teacher_id']) ?>"
+                                        data-lastname="<?= h($nt['last_name']) ?>" data-firstname="<?= h($nt['first_name']) ?>"
+                                        data-middlename="<?= h($nt['middle_name']) ?>" data-gender="<?= h($nt['gender']) ?>"
+                                        data-careerlevel="<?= h($nt['career_level']) ?>" data-employment="<?= h($nt['employment_status']) ?>"
+                                        data-qual="<?= h($nt['teacher_qualification']) ?>" data-major="<?= h($nt['major']) ?>"
+                                        data-ntpos="<?= h($nt['nt_position']) ?>" data-ntappt="<?= h($nt['nt_appt_type']) ?>"
+                                        data-ntfund="<?= h($nt['nt_fund_source']) ?>" data-category="Non-Teaching"
+                                        data-funding="<?= h($nt['funding_source']) ?>"
+                                        data-tip="Edit"><i class="fas fa-pen"></i></a>
+                                    <a href="#" class="ab d"
+                                        data-type="teacher" data-rid="<?= $nt['id'] ?>"
+                                        data-tip="Delete"><i class="fas fa-trash"></i></a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+
+                    <!-- Guidelines & Signature -->
+                    <tr>
+                        <td colspan="14" style="border:1px solid #555;vertical-align:top;padding:6px 8px;font-size:7.5px;color:#444;line-height:1.5;">
+                            <strong>GUIDELINES:</strong><br>
+                            1. This form shall be accomplished at the beginning of the school year by the school head.<br>
+                            2. All school personnel shall be listed from highest to lowest rank.<br>
+                            3. Reflect subjects, advisory assignments, and other administrative duties.<br>
+                            4. Daily Program Column is for teaching personnel only.<br>
+                            <br><em>Updated as of: <?= date('m/d/Y') ?></em>
+                        </td>
+                        <td colspan="10" style="border:1px solid #555;text-align:center;vertical-align:bottom;padding:6px;">
+                            <div style="border-top:1px solid #333;width:80%;margin:40px auto 0;padding-top:4px;font-weight:800;font-size:8.5px;">
+                                <?php
+                                if ($principal) {
+                                    $sn = $principal['first_name']
+                                        ? strtoupper($principal['first_name']) . ' ' . strtoupper($principal['last_name'])
+                                        : strtoupper($principal['teacher_name']);
+                                    echo h($sn);
+                                } else echo 'SCHOOL PRINCIPAL';
+                                ?><br>
+                                <span style="font-weight:400;font-size:7.5px;">(Signature of School Head over Printed Name)</span>
+                            </div>
+                        </td>
+                        <td class="no-print" style="border:1px solid #555;"></td>
+                    </tr>
+                </table>
+            </div>
+        </div><!-- /.sf7w -->
+
+        <!-- ══ PRINCIPAL HISTORY ══ -->
+        <?php if (!empty($principalHistory)): ?>
+            <div style="font-size:14px;font-weight:700;color:#92400e;display:flex;align-items:center;gap:8px;margin-bottom:8px;"><i class="fas fa-history"></i> Principal Tenure History</div>
+            <?php foreach ($principalHistory as $ph): ?>
+                <div class="hw">
+                    <div class="hh" onclick="this.nextElementSibling.classList.toggle('open')">
+                        <i class="fas fa-crown" style="color:#d97706;"></i>
+                        <h4><?= h($ph['teacher_name']) ?> — <?= h($ph['career_level'] ?: 'Principal') ?></h4>
+                        <span style="font-size:12px;color:#b45309;margin-right:10px;"><?= $ph['assigned_date'] ? 'Served: ' . date('M Y', strtotime($ph['assigned_date'])) . ' – ' . date('M Y', strtotime($ph['replaced_date'])) : '' ?></span>
+                        <i class="fas fa-chevron-down" style="color:#d97706;"></i>
+                    </div>
+                    <div class="hb">
+                        <div style="font-size:12px;color:#6b7280;margin-bottom:10px;">
+                            <b>ID:</b> <?= h($ph['teacher_id']) ?> &nbsp;|&nbsp; <b>Gender:</b> <?= h($ph['gender']) ?> &nbsp;|&nbsp; <b>Replaced:</b> <?= $ph['replaced_date'] ? date('F j, Y', strtotime($ph['replaced_date'])) : '—' ?>
+                        </div>
+                        <?php
+                        $th = $conn->query("SELECT * FROM teacher_history WHERE principal_hist_id=" . (int)$ph['id'] . " ORDER BY id ASC");
+                        $thr = [];
+                        while ($r = $th->fetch_assoc()) $thr[] = $r;
+                        if (!empty($thr)):
+                        ?>
+                            <div style="overflow-x:auto;">
+                                <table class="htbl">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>ID</th>
+                                            <th>Name</th>
+                                            <th>Gender</th>
+                                            <th>Position</th>
+                                            <th>Qualification</th>
+                                            <th>Major</th>
+                                            <th>Subject</th>
+                                            <th>Grade/Sec</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($thr as $i => $row): ?>
+                                            <tr>
+                                                <td><?= $i + 1 ?></td>
+                                                <td><?= h($row['teacher_id']) ?></td>
+                                                <td><b><?= h($row['teacher_name']) ?></b></td>
+                                                <td><?= h($row['gender']) ?></td>
+                                                <td><?= h($row['career_level']) ?></td>
+                                                <td><?= h($row['teacher_qualification']) ?></td>
+                                                <td><?= h($row['major']) ?></td>
+                                                <td><?= h($row['subject_assigned']) ?></td>
+                                                <td><?= h($row['grade_section']) ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php else: ?>
+                            <p style="font-size:12px;color:#9ca3af;font-style:italic;">No teacher records for this tenure.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
+
+    </div><!-- /.page-content -->
+
+    <!-- Delete form -->
+    <form id="delf" method="POST">
+        <input type="hidden" name="action" value="delete">
+        <input type="hidden" id="drid" name="delete_record_id">
+        <input type="hidden" id="dtype" name="delete_type" value="teacher">
+    </form>
+
+    <!-- ══════════════════════════════════════════════════════════
+     MODAL
+     ══════════════════════════════════════════════════════════ -->
+    <div id="pmod" class="modal">
+        <div class="mc">
+            <div class="mhd grn" id="mhd">
+                <h3 id="mtit"><i class="fas fa-user-plus" style="color:var(--tp);"></i> Add Personnel</h3>
+                <button class="xbtn" id="xbtn">&times;</button>
+            </div>
+            <div class="msc">
+                <form id="pform" class="mb" method="POST" enctype="multipart/form-data">
+                    <input type="hidden" name="action" id="fact" value="add">
+                    <input type="hidden" name="edit_record_id" id="frid">
+                    <input type="hidden" name="edit_type" id="frtype" value="teacher">
+                    <input type="hidden" name="teacher_name" id="ffull">
+
+                    <!-- Principal toggle -->
+                    <div id="ptw" class="ptog" style="display:none;">
+                        <label class="tg"><input type="checkbox" id="fisp" name="is_principal"><span class="tgsl"></span></label>
+                        <div>
+                            <div style="font-size:13px;font-weight:600;color:#92400e;"><i class="fas fa-crown" style="color:#d97706;margin-right:4px;"></i>Designate as School Principal</div>
+                            <div style="font-size:11px;color:#b45309;">Archives the current principal &amp; snapshots all teachers.</div>
+                        </div>
+                    </div>
+
+                    <!-- Personal -->
+                    <div class="fsec">
+                        <div class="fst"><i class="fas fa-user"></i> Personal Information</div>
+                        <div class="fr c3">
+                            <div class="fg"><label><i class="fas fa-font"></i> Last Name <span class="req">*</span></label><input type="text" id="fln" name="last_name" placeholder="DELA CRUZ" required></div>
+                            <div class="fg"><label><i class="fas fa-font"></i> First Name <span class="req">*</span></label><input type="text" id="ffn" name="first_name" placeholder="JUAN" required></div>
+                            <div class="fg"><label><i class="fas fa-font"></i> Middle Name</label><input type="text" id="fmn" name="middle_name" placeholder="SANTOS"></div>
+                        </div>
+                        <div class="fr">
+                            <div class="fg"><label><i class="fas fa-id-badge"></i> Employee Number <span class="req">*</span></label><input type="text" id="feid" name="teacher_id" placeholder="e.g. 306332001" required></div>
+                            <div class="fg"><label><i class="fas fa-venus-mars"></i> Sex / Gender</label>
+                                <select id="fgnd" name="gender">
+                                    <option value="">— Select —</option>
+                                    <option value="MALE">MALE</option>
+                                    <option value="FEMALE">FEMALE</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="fr">
+                            <div class="fg"><label><i class="fas fa-envelope"></i> Email</label><input type="email" id="femail" name="teacher_email" placeholder="teacher@deped.gov.ph"></div>
+                            <div class="fg"><label><i class="fas fa-phone"></i> Contact</label><input type="tel" id="fcon" name="teacher_contact" placeholder="+63 9XX XXX XXXX"></div>
+                        </div>
+                    </div>
+
+                    <!-- Position -->
+                    <div class="fsec">
+                        <div class="fst"><i class="fas fa-briefcase"></i> Position Details</div>
+                        <div class="fr">
+                            <div class="fg"><label><i class="fas fa-medal"></i> Title of Plantilla Position</label>
+                                <select id="fcl" name="career_level">
+                                    <option value="">— Select —</option>
+                                    <optgroup label="School Head">
+                                        <option value="School Principal I">School Principal I</option>
+                                        <option value="School Principal II">School Principal II</option>
+                                        <option value="School Principal III">School Principal III</option>
+                                    </optgroup>
+                                    <optgroup label="Master Teacher">
+                                        <option value="Master Teacher IV">Master Teacher IV</option>
+                                        <option value="Master Teacher III">Master Teacher III</option>
+                                        <option value="Master Teacher II">Master Teacher II</option>
+                                        <option value="Master Teacher I">Master Teacher I</option>
+                                    </optgroup>
+                                    <optgroup label="Head Teacher">
+                                        <option value="Head Teacher III">Head Teacher III</option>
+                                        <option value="Head Teacher II">Head Teacher II</option>
+                                        <option value="Head Teacher I">Head Teacher I</option>
+                                    </optgroup>
+                                    <optgroup label="Teacher">
+                                        <option value="Teacher III">Teacher III</option>
+                                        <option value="Teacher II">Teacher II</option>
+                                        <option value="Teacher I">Teacher I</option>
+                                    </optgroup>
+                                    <optgroup label="Non-Teaching">
+                                        <option value="Watchman">Watchman</option>
+                                        <option value="Utility Worker">Utility Worker</option>
+                                        <option value="Driver">Driver</option>
+                                        <option value="Clerk">Clerk</option>
+                                        <option value="Security Guard">Security Guard</option>
+                                        <option value="Other">Other Non-Teaching</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+                            <div class="fg"><label><i class="fas fa-file-contract"></i> Appointment Status</label>
+                                <select id="fappt" name="employment_status">
+                                    <option value="">— Select —</option>
+                                    <option value="REGULAR PERMANENT">REGULAR PERMANENT</option>
+                                    <option value="Contractual">Contractual</option>
+                                    <option value="Substitute">Substitute</option>
+                                    <option value="Volunteer">Volunteer</option>
+                                    <option value="Job Order/Contract of Service">Job Order / Contract of Service</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="fr">
+                            <div class="fg"><label><i class="fas fa-graduation-cap"></i> Highest Educational Qualification</label>
+                                <select id="fqual" name="teacher_qualification">
+                                    <option value="">— Select —</option>
+                                    <option value="bachelor">Bachelor's Degree</option>
+                                    <option value="bachelors-units">Bachelor's w/ Post-Grad Units</option>
+                                    <option value="post-graduate">Masters (Unit)</option>
+                                    <option value="masteral">Master's Degree</option>
+                                    <option value="doctoral">Doctoral Degree</option>
+                                    <option value="lac">LAC</option>
+                                    <option value="k12">K-12</option>
+                                    <option value="others">Others</option>
+                                </select>
+                            </div>
+                            <div class="fg"><label><i class="fas fa-book"></i> Major / Specialization</label>
+                                <input type="text" id="fmaj" name="major" placeholder="e.g. ENGLISH, MATH, TLE, PHYSICAL SCIENCES">
+                            </div>
+                        </div>
+                        <div class="fr">
+                            <div class="fg"><label><i class="fas fa-wallet"></i> Funding Source</label>
+                                <select id="ffund" name="funding_source">
+                                    <option value="NATIONAL">NATIONAL</option>
+                                    <option value="SEF">SEF</option>
+                                    <option value="PTA">PTA</option>
+                                    <option value="MOOE">MOOE</option>
+                                    <option value="NGO">NGO</option>
+                                </select>
+                            </div>
+                            <div class="fg"><label><i class="fas fa-tag"></i> Category</label>
+                                <select id="fcat" name="category">
+                                    <option value="Teaching">Teaching</option>
+                                    <option value="Non-Teaching">Non-Teaching</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ancillary (teaching only) -->
+                    <div class="fsec" id="ts">
+                        <div class="fst"><i class="fas fa-star"></i> Ancillary / Additional Role</div>
+                        <div class="fr">
+                            <div class="fg"><label><i class="fas fa-users"></i> Club / Coordinator Role</label><input type="text" id="fclub" name="club_role" placeholder="e.g. SSG Adviser, Math Club Coordinator"></div>
+                            <div class="fg"><label><i class="fas fa-chalkboard-teacher"></i> Advisory Class</label><input type="text" id="fadv" name="advisory_class" placeholder="e.g. Grade 8-Rosal"></div>
+                        </div>
+                    </div>
+
+                    <!-- Non-Teaching Extra -->
+                    <div class="fsec" id="nts" style="display:none;">
+                        <div class="fst"><i class="fas fa-hard-hat"></i> Non-Teaching / Other Appointment (Table C)</div>
+                        <div class="fr c3">
+                            <div class="fg"><label><i class="fas fa-id-card"></i> Position</label><input type="text" id="fntpos" name="nt_position" placeholder="e.g. Watchman, Utility Worker"></div>
+                            <div class="fg"><label><i class="fas fa-file-alt"></i> Appointment Type</label>
+                                <select id="fntappt" name="nt_appt_type">
+                                    <option value="">— Select —</option>
+                                    <option value="Job Order/Contract of Service">Job Order / Contract of Service</option>
+                                    <option value="Contractual">Contractual</option>
+                                    <option value="Volunteer">Volunteer</option>
+                                </select>
+                            </div>
+                            <div class="fg"><label><i class="fas fa-coins"></i> Fund Source</label>
+                                <select id="fntfund" name="nt_fund_source">
+                                    <option value="">— Select —</option>
+                                    <option value="SEF">SEF</option>
+                                    <option value="PTA">PTA</option>
+                                    <option value="MOOE">MOOE</option>
+                                    <option value="SEF, MOOE">SEF, MOOE</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Daily Schedule Builder -->
+                    <div class="fsec" id="ss">
+                        <div class="fst"><i class="fas fa-calendar-alt"></i> Daily Program / Schedule</div>
+                        <p style="font-size:11px;color:#6b7280;margin:0 0 8px;">Add one row per subject/assignment. Each row = one line in the SF7 table.</p>
+                        <div style="overflow-x:auto;">
+                            <table class="stbl" id="stbl">
+                                <thead>
+                                    <tr>
+                                        <th style="min-width:110px;">Subject / Role</th>
+                                        <th style="width:36px;">Gr</th>
+                                        <th style="min-width:75px;">Section</th>
+                                        <th style="width:26px;">M</th>
+                                        <th style="width:26px;">T</th>
+                                        <th style="width:26px;">W</th>
+                                        <th style="width:30px;">TH</th>
+                                        <th style="width:26px;">F</th>
+                                        <th style="width:72px;">Time Start</th>
+                                        <th style="width:72px;">Time End</th>
+                                        <th style="width:52px;">Mins</th>
+                                        <th style="width:32px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="srows"></tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="sadd" id="sadd"><i class="fas fa-plus"></i> Add Row</button>
+                    </div>
+
+                    <!-- Photo -->
+                    <div class="fsec">
+                        <div class="fst"><i class="fas fa-image"></i> Profile Photo</div>
+                        <input type="file" name="teacher_image" accept="image/*" style="padding:7px;border:2px dashed #e5e7eb;border-radius:8px;width:100%;box-sizing:border-box;font-size:12px;">
+                    </div>
+                </form>
+            </div>
+            <div class="mft">
+                <button type="button" class="cbtn" id="cbtn">Cancel</button>
+                <button type="button" class="sbtn grn" id="sbtn" onclick="document.getElementById('pform').submit()">
+                    <i class="fas fa-save"></i> <span id="slbl">Save Personnel</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ══ Schedule builder ══════════════════════════════════════════════════
+        var sidx = 0;
+
+        function mkRow(d) {
+            d = d || {};
+            var i = sidx++;
+            var c = function(v) {
+                return v ? 'checked' : ''
+            };
+            return '<tr>' +
+                '<td><input type="text" name="sched_subject[]" value="' + hq(d.subject || '') + '" placeholder="e.g. ENGLISH"></td>' +
+                '<td><input type="text" name="sched_grade[]"   value="' + hq(d.grade || '') + '"   style="text-align:center;"></td>' +
+                '<td><input type="text" name="sched_section[]" value="' + hq(d.section || '') + '" placeholder="e.g. Mendel"></td>' +
+                '<td style="text-align:center;"><input type="checkbox" name="sched_mon[]" value="1" ' + c(d.day_mon) + '></td>' +
+                '<td style="text-align:center;"><input type="checkbox" name="sched_tue[]" value="1" ' + c(d.day_tue) + '></td>' +
+                '<td style="text-align:center;"><input type="checkbox" name="sched_wed[]" value="1" ' + c(d.day_wed) + '></td>' +
+                '<td style="text-align:center;"><input type="checkbox" name="sched_thu[]" value="1" ' + c(d.day_thu) + '></td>' +
+                '<td style="text-align:center;"><input type="checkbox" name="sched_fri[]" value="1" ' + c(d.day_fri) + '></td>' +
+                '<td><input type="time" name="sched_tstart[]" value="' + hq(t24(d.time_start || '')) + '"></td>' +
+                '<td><input type="time" name="sched_tend[]"   value="' + hq(t24(d.time_end || '')) + '"></td>' +
+                '<td><input type="number" name="sched_mins[]" value="' + hq(d.minutes || '') + '" min="0" style="text-align:center;"></td>' +
+                '<td><button type="button" class="sdel" onclick="this.closest(\'tr\').remove()"><i class="fas fa-times"></i></button></td>' +
+                '</tr>';
+        }
+
+        function hq(v) {
+            return String(v || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+        }
+
+        function t24(t) {
+            if (!t) return '';
+            if (/^\d{1,2}:\d{2}$/.test(t)) return t;
+            var m = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+            if (!m) return '';
+            var h = parseInt(m[1]),
+                mn = m[2],
+                ap = m[3].toUpperCase();
+            if (ap === 'PM' && h !== 12) h += 12;
+            if (ap === 'AM' && h === 12) h = 0;
+            return String(h).padStart(2, '0') + ':' + mn;
+        }
+        document.getElementById('sadd').addEventListener('click', function() {
+            document.getElementById('srows').insertAdjacentHTML('beforeend', mkRow());
+        });
+
+        // ══ Modal ══════════════════════════════════════════════════════════════
+        var modal = document.getElementById('pmod'),
+            mhd = document.getElementById('mhd'),
+            mtit = document.getElementById('mtit'),
+            mform = document.getElementById('pform'),
+            sbtn = document.getElementById('sbtn'),
+            slbl = document.getElementById('slbl');
+
+        function openModal() {
+            modal.style.display = 'block';
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeModal() {
+            modal.style.display = 'none';
+            document.body.style.overflow = '';
+        }
+
+        function syncCat() {
+            var isNT = document.getElementById('fcat').value === 'Non-Teaching';
+            document.getElementById('nts').style.display = isNT ? 'block' : 'none';
+            document.getElementById('ss').style.display = isNT ? 'none' : 'block';
+            document.getElementById('ts').style.display = isNT ? 'none' : 'block';
+        }
+        document.getElementById('fcat').addEventListener('change', syncCat);
+        syncCat();
+
+        function resetForm() {
+            mform.reset();
+            document.getElementById('frid').value = '';
+            document.getElementById('frtype').value = 'teacher';
+            document.getElementById('srows').innerHTML = '';
+            sidx = 0;
+            syncCat();
+        }
+
+        document.getElementById('xbtn').addEventListener('click', closeModal);
+        document.getElementById('cbtn').addEventListener('click', closeModal);
+        window.addEventListener('click', function(e) {
+            if (e.target === modal) closeModal();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        // Build full name before submit
+        mform.addEventListener('submit', function() {
+            var ln = (document.getElementById('fln').value || '').trim().toUpperCase();
+            var fn = (document.getElementById('ffn').value || '').trim().toUpperCase();
+            var mn = (document.getElementById('fmn').value || '').trim().toUpperCase();
+            document.getElementById('ffull').value = ln + (fn ? ', ' + fn : '') + (mn ? ' ' + mn : '');
+        });
+
+        // Add Teacher
+        document.getElementById('btn-teacher').addEventListener('click', function() {
+            resetForm();
+            document.getElementById('fact').value = 'add';
+            document.getElementById('ptw').style.display = 'flex';
+            document.getElementById('fisp').checked = false;
+            mhd.className = 'mhd grn';
+            mtit.innerHTML = '<i class="fas fa-user-plus" style="color:var(--tp);"></i> Add Personnel';
+            sbtn.className = 'sbtn grn';
+            slbl.textContent = 'Save Personnel';
+            openModal();
+        });
+
+        // Add Principal
+        document.getElementById('btn-principal').addEventListener('click', function() {
+            resetForm();
+            document.getElementById('fact').value = 'add';
+            document.getElementById('ptw').style.display = 'flex';
+            document.getElementById('fisp').checked = true;
+            document.getElementById('fcl').value = 'School Principal I';
+            document.getElementById('fappt').value = 'REGULAR PERMANENT';
+            document.getElementById('fcat').value = 'Teaching';
+            syncCat();
+            mhd.className = 'mhd gld';
+            mtit.innerHTML = '<i class="fas fa-crown" style="color:#d97706;"></i> Add School Principal';
+            sbtn.className = 'sbtn gld';
+            slbl.textContent = 'Appoint Principal';
+            openModal();
+        });
+
+        // Edit
+        document.querySelectorAll('.ab.e').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                resetForm();
+                var d = this.dataset;
+                document.getElementById('fact').value = 'edit';
+                document.getElementById('frid').value = d.rid;
+                document.getElementById('frtype').value = d.type;
+                document.getElementById('ptw').style.display = 'none';
+
+                document.getElementById('feid').value = d.id || '';
+                document.getElementById('fln').value = d.lastname || '';
+                document.getElementById('ffn').value = d.firstname || '';
+                document.getElementById('fmn').value = d.middlename || '';
+                document.getElementById('fgnd').value = d.gender || '';
+                document.getElementById('fcl').value = d.careerlevel || '';
+                document.getElementById('fappt').value = d.employment || '';
+                document.getElementById('fqual').value = d.qual || '';
+                document.getElementById('fmaj').value = d.major || '';
+                document.getElementById('femail').value = d.email || '';
+                document.getElementById('fcon').value = d.contact || '';
+                document.getElementById('fadv').value = d.advisory || '';
+                document.getElementById('fclub').value = d.club || '';
+                document.getElementById('fntpos').value = d.ntpos || '';
+                document.getElementById('fntappt').value = d.ntappt || '';
+                document.getElementById('fntfund').value = d.ntfund || '';
+                document.getElementById('fcat').value = d.category || 'Teaching';
+                document.getElementById('ffund').value = d.funding || 'NATIONAL';
+                syncCat();
+
+                // Load schedules via AJAX
+                fetch('teachers.php?get_schedules=1&tid=' + encodeURIComponent(d.id) + '&ttype=' + encodeURIComponent(d.type))
+                    .then(function(r) {
+                        return r.json();
+                    })
+                    .then(function(rows) {
+                        document.getElementById('srows').innerHTML = '';
+                        sidx = 0;
+                        if (rows && rows.length) {
+                            rows.forEach(function(r) {
+                                document.getElementById('srows').insertAdjacentHTML('beforeend', mkRow(r));
+                            });
+                        } else {
+                            document.getElementById('srows').insertAdjacentHTML('beforeend', mkRow());
+                        }
+                    }).catch(function() {
+                        document.getElementById('srows').insertAdjacentHTML('beforeend', mkRow());
+                    });
+
+                var isp = (d.type === 'principal');
+                mhd.className = isp ? 'mhd gld' : 'mhd grn';
+                mtit.innerHTML = isp ?
+                    '<i class="fas fa-crown" style="color:#d97706;"></i> Edit Principal' :
+                    '<i class="fas fa-user-edit" style="color:var(--tp);"></i> Edit Personnel';
+                sbtn.className = isp ? 'sbtn gld' : 'sbtn grn';
+                slbl.textContent = 'Save Changes';
+                openModal();
+            });
+        });
+
+        // Delete
+        document.querySelectorAll('.ab.d').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                var lbl = this.dataset.type === 'principal' ? 'principal' : 'personnel';
+                if (confirm('Delete this ' + lbl + '? This action cannot be undone.')) {
+                    document.getElementById('drid').value = this.dataset.rid;
+                    document.getElementById('dtype').value = this.dataset.type;
+                    document.getElementById('delf').submit();
+                }
+            });
+        });
+
+        // Auto-dismiss alerts
+        setTimeout(function() {
+            document.querySelectorAll('.alert').forEach(function(a) {
+                a.style.transition = 'opacity .4s';
+                a.style.opacity = '0';
+                setTimeout(function() {
+                    a.closest('.alert-c') && a.closest('.alert-c').remove();
+                }, 400);
+            });
+        }, 4000);
+    </script>
+</body>
+
+</html>

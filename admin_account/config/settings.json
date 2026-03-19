@@ -1,0 +1,72 @@
+{
+  "appearance": {
+    "theme": "light",
+    "compactMode": false,
+    "pinnedShortcuts": ["reports", "students", "finance"],
+    "notifications": {
+      "email": true,
+      "inApp": true,
+      "push": false
+    }
+  },
+  "locale": {
+    "language": "en",
+    "dateFormat": "MMM DD, YYYY",
+    "timezone": "Asia/Manila"
+  },
+  "security": {
+    "twoFactorAuth": false,
+    "minPasswordLength": 8,
+    "sessionLifetime": 3600,
+    "privacyMode": false
+  },
+  "system": {
+    "memoryLimit": "512M",
+    "maxExecutionTime": 120,
+    "uploadMaxFilesize": "50M",
+    "postMaxSize": "50M",
+    "errorReporting": "off"
+  },
+  "database": {
+    "autoBackups": "daily",
+    "httpsEnforcement": true,
+    "maintenanceMode": false,
+    "encryptionKey": "sk_live_defaultkey_pleasegenerate_newone"
+  },
+  "school": {
+    "academicYear": "2025-2026",
+    "smtp": {
+      "host": "",
+      "port": 587,
+      "username": "",
+      "password": ""
+    }
+  },
+  "admin": {
+    "subAdminPermissions": {
+      "manageStudents": true,
+      "manageFiles": true,
+      "viewFinance": false,
+      "moderateReports": true,
+      "postAnnouncements": true
+    }
+  },
+  "finance": {
+    "budgetCategories": ["Clubs", "Events", "School Supplies", "Maintenance", "Student Programs"],
+    "expenseTracking": true,
+    "receiptRequired": true
+  },
+  "files": {
+    "categories": ["Announcements", "Forms", "Club Documents", "School Policies", "Teacher Materials"],
+    "previewSupport": true,
+    "versionHistory": true,
+    "downloadAnalytics": false
+  },
+  "clubs": {
+    "creationRequests": true,
+    "principalApproval": true,
+    "autoAssignAdviser": false,
+    "memberManagement": true,
+    "clubAnnouncements": true
+  }
+}
