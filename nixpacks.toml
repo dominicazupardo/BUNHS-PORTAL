@@ -18,8 +18,9 @@ cmds = [
 
 [phases.build]
 cmds = [
-  "php -r \"echo 'mysqli: ' . (function_exists('mysqli_connect') ? 'OK' : 'MISSING') . PHP_EOL;\""
+  "php82 -m | grep mysqli",
+  "php82 -m | grep pdo_mysql"
 ]
 
 [start]
-cmd = "php82 -d extension=mysqli -d extension=pdo_mysql -S 0.0.0.0:$PORT -t ."
+cmd = "php82 -S 0.0.0.0:$PORT index.php"

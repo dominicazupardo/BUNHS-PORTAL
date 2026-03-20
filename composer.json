@@ -1,5 +1,11 @@
 {
-    "require": {
-        "phpmailer/phpmailer": "^7.0"
-    }
+  "require": {
+    "phpmailer/phpmailer": "^7.0",
+    "ext-mysqli": "*",
+    "ext-pdo_mysql": "*",
+    "ext-mbstring": "*",
+    "ext-zip": "*",
+    "ext-gd": "*",
+    "ext-curl": "*"
+  }
 }
