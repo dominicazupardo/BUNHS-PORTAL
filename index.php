@@ -1,8 +1,7 @@
 <?php
-// Shared session configuration (must be before any output)
+// ─── Session + Cache + DB ─────────────────────────────────────────────────────
 require_once 'session_config.php';
-
-// Include database connection
+require_once 'cache_helper.php';
 include 'db_connection.php';
 
 // ─── AUTO-CREATE SUPPORT TABLES ──────────────────────────────────────────────
@@ -16,7 +15,6 @@ $conn->query("CREATE TABLE IF NOT EXISTS school_announcements (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-// ── Student Memories (photo gallery) ─────────────────────────────────────────
 $conn->query("CREATE TABLE IF NOT EXISTS student_memories (
     id          INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
     title       VARCHAR(255) NOT NULL DEFAULT '',
@@ -25,7 +23,6 @@ $conn->query("CREATE TABLE IF NOT EXISTS student_memories (
     uploaded_by VARCHAR(100) DEFAULT 'admin',
     uploaded_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
 
 $conn->query("CREATE TABLE IF NOT EXISTS school_settings (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -57,238 +54,7 @@ $conn->query("INSERT IGNORE INTO homepage_cards (card_key, title, description, i
     ('cert_card2', 'Learn at Your Pace', '24/7 access to all materials', 'fa-clock', ''),
     ('cert_card3', 'Global Community', 'Connect with learners worldwide', 'fa-users', '')");
 
-// ─── FETCH ALL DYNAMIC DATA ───────────────────────────────────────────────────
-
-// 1. Student stats
-$total_students   = 0;
-$active_students  = 0;
-$res = $conn->query("SELECT COUNT(*) as total FROM students");
-if ($res && $row = $res->fetch_assoc()) $total_students = (int)$row['total'];
-
-$res = $conn->query("SELECT COUNT(*) as total FROM students WHERE LOWER(status)='active'");
-if ($res && $row = $res->fetch_assoc()) $active_students = (int)$row['total'];
-
-// 2. Teacher stats
-$total_teachers = 0;
-$res = $conn->query("SELECT COUNT(*) as total FROM teachers");
-if ($res && $row = $res->fetch_assoc()) $total_teachers = (int)$row['total'];
-
-// Distinct subjects count
-$total_subjects = 0;
-$res = $conn->query("SELECT teacher_subjects FROM teachers WHERE teacher_subjects IS NOT NULL AND teacher_subjects != ''");
-$all_subjects = [];
-if ($res) {
-    while ($row = $res->fetch_assoc()) {
-        $parts = array_map('trim', explode(',', $row['teacher_subjects']));
-        foreach ($parts as $s) {
-            if ($s !== '') $all_subjects[] = strtolower($s);
-        }
-    }
-    $total_subjects = count(array_unique($all_subjects));
-}
-if ($total_subjects === 0) $total_subjects = 0;
-
-// 3. Student-Faculty Ratio
-$ratio_display = '0:1';
-if ($total_teachers > 0) {
-    $ratio_num = round($total_students / $total_teachers, 0);
-    $ratio_display = $ratio_num . ':1';
-}
-
-// 4. School Rating
-$school_rating_val = 0;
-$school_rating_count = 0;
-$res = $conn->query("SELECT AVG(rating) as avg_rating, COUNT(*) as total_reviews FROM school_ratings");
-if ($res && $row = $res->fetch_assoc()) {
-    $school_rating_val   = round((float)$row['avg_rating'], 1);
-    $school_rating_count = (int)$row['total_reviews'];
-}
-if ($school_rating_val <= 0) {
-    $school_rating_val = 0;
-    $school_rating_count = 0;
-}
-
-// 5. Graduation Rate – per batch (completers / total) * 100, averaged across batches
-$graduation_rate = 0;
-$res = $conn->query("SELECT graduation_year, COUNT(*) as total,
-    SUM(CASE WHEN LOWER(status) IN ('completers','graduate','graduated','completer') THEN 1 ELSE 0 END) as completers
-    FROM students WHERE graduation_year IS NOT NULL AND graduation_year > 0
-    GROUP BY graduation_year");
-if ($res && $res->num_rows > 0) {
-    $batch_rates = [];
-    while ($row = $res->fetch_assoc()) {
-        if ($row['total'] > 0) {
-            $batch_rates[] = ($row['completers'] / $row['total']) * 100;
-        }
-    }
-    if (count($batch_rates) > 0) {
-        $graduation_rate = round(array_sum($batch_rates) / count($batch_rates), 0);
-    }
-}
-
-// 6. Batch graduate success – latest batch success percentage
-//    Formula: (completers in latest batch / total in latest batch) × 100
-$batch_success_pct  = 0;
-$batch_success_year = null;
-$stmt_bg = $conn->prepare(
-    "SELECT graduation_year,
-            COUNT(*) AS total,
-            SUM(CASE WHEN LOWER(status) IN ('completers','graduate','graduated','completer') THEN 1 ELSE 0 END) AS completers
-     FROM students
-     WHERE graduation_year IS NOT NULL AND graduation_year > 0
-     GROUP BY graduation_year
-     ORDER BY graduation_year DESC
-     LIMIT 1"
-);
-if ($stmt_bg) {
-    $stmt_bg->execute();
-    $res_bg = $stmt_bg->get_result();
-    if ($res_bg && $row_bg = $res_bg->fetch_assoc()) {
-        $batch_success_year = (int)$row_bg['graduation_year'];
-        if ((int)$row_bg['total'] > 0) {
-            $batch_success_pct = round(
-                ((int)$row_bg['completers'] / (int)$row_bg['total']) * 100,
-                0
-            );
-        }
-    }
-    $stmt_bg->close();
-}
-
-// 7. Clubs
-$clubs_list = [];
-$total_clubs = 0;
-// Check which optional columns exist in clubs table
-$clubs_has_logo   = false;
-$clubs_has_status = false;
-$clubs_col_check  = $conn->query("SHOW COLUMNS FROM clubs");
-if ($clubs_col_check) {
-    while ($col = $clubs_col_check->fetch_assoc()) {
-        if ($col['Field'] === 'logo')   $clubs_has_logo   = true;
-        if ($col['Field'] === 'status') $clubs_has_status = true;
-    }
-}
-$logo_select  = $clubs_has_logo   ? ', c.logo'            : ', NULL AS logo';
-$status_where = $clubs_has_status ? "WHERE c.status = 'Active'" : '';
-// Check if club_members table exists
-$has_club_members = $conn->query("SHOW TABLES LIKE 'club_members'")->num_rows > 0;
-$member_select = $has_club_members
-    ? '(SELECT COUNT(*) FROM club_members cm WHERE cm.club_id = c.id) AS member_count'
-    : '0 AS member_count';
-
-$res = $conn->query("SELECT c.id, c.name, c.description $logo_select, $member_select
-    FROM clubs c $status_where ORDER BY c.name ASC");
-if ($res) {
-    while ($row = $res->fetch_assoc()) {
-        $clubs_list[] = $row;
-    }
-    $total_clubs = count($clubs_list);
-}
-if ($total_clubs === 0) {
-    $res2 = $conn->query("SELECT COUNT(*) as total FROM clubs");
-    if ($res2 && $row = $res2->fetch_assoc()) $total_clubs = (int)$row['total'];
-}
-
-// 8. Total events count
-$total_events = 0;
-$res = $conn->query("SELECT COUNT(*) as total FROM events");
-if ($res && $row = $res->fetch_assoc()) $total_events = (int)$row['total'];
-
-// 9. Today's announcement / school closure
-$today_date = date('Y-m-d');
-$today_announcement = null;
-$res = $conn->query("SELECT * FROM school_announcements WHERE announcement_date = '$today_date' LIMIT 1");
-if ($res && $res->num_rows > 0) {
-    $today_announcement = $res->fetch_assoc();
-}
-
-// 10. School settings (founding year, about photo)
-function get_setting($conn, $key, $default = '')
-{
-    $k = $conn->real_escape_string($key);
-    $res = $conn->query("SELECT setting_value FROM school_settings WHERE setting_key = '$k' LIMIT 1");
-    if ($res && $row = $res->fetch_assoc()) return $row['setting_value'];
-    return $default;
-}
-$founding_year = (int)get_setting($conn, 'school_founding_year', date('Y') - 7);
-$years_of_excellence = date('Y') - $founding_year;
-$about_photo = get_setting($conn, 'about_photo', 'assets/img/front pic/Buyoan School.jpg');
-$cta_photo   = get_setting($conn, 'cta_photo',   'assets/img/education/Students learning.jpg');
-
-// 11. Homepage cards (leadership, cultural, innovation, cert cards)
-function get_card($conn, $key)
-{
-    $k = $conn->real_escape_string($key);
-    $res = $conn->query("SELECT * FROM homepage_cards WHERE card_key = '$k' LIMIT 1");
-    if ($res && $row = $res->fetch_assoc()) return $row;
-    return ['title' => '', 'description' => '', 'icon' => '', 'image' => ''];
-}
-$card_leadership = get_card($conn, 'leadership');
-$card_cultural   = get_card($conn, 'cultural');
-$card_innovation = get_card($conn, 'innovation');
-$cert_card1      = get_card($conn, 'cert_card1');
-$cert_card2      = get_card($conn, 'cert_card2');
-$cert_card3      = get_card($conn, 'cert_card3');
-
-// 12. Recent News – 4 most recently published, rolling forward as newer ones are added.
-//     The news table has no status column; use created_at DESC to get latest 4.
-//     News with a future news_date is treated as scheduled and shown when its date arrives;
-//     fall back to created_at ordering when news_date equals today or is in the past.
-$recent_news = [];
-$res = $conn->query(
-    "SELECT * FROM news
-     WHERE news_date <= CURDATE()
-     ORDER BY news_date DESC, created_at DESC
-     LIMIT 4"
-);
-if ($res) {
-    while ($row = $res->fetch_assoc()) $recent_news[] = $row;
-}
-// If fewer than 4 published, fill with the next scheduled (future-dated) news
-if (count($recent_news) < 4) {
-    $need   = 4 - count($recent_news);
-    $ids_in = array_map(fn($n) => (int)$n['id'], $recent_news);
-    $exclude = count($ids_in) ? 'AND id NOT IN (' . implode(',', $ids_in) . ')' : '';
-    $res2 = $conn->query(
-        "SELECT * FROM news
-         WHERE news_date > CURDATE() $exclude
-         ORDER BY news_date ASC
-         LIMIT $need"
-    );
-    if ($res2) while ($row = $res2->fetch_assoc()) $recent_news[] = $row;
-}
-
-// 13. Upcoming Events – rolling 4
-$upcoming_events = [];
-$res = $conn->query("SELECT * FROM events WHERE event_date >= CURDATE() ORDER BY event_date ASC LIMIT 4");
-if ($res) {
-    while ($row = $res->fetch_assoc()) $upcoming_events[] = $row;
-}
-if (count($upcoming_events) < 4) {
-    $have = count($upcoming_events);
-    $need = 4 - $have;
-    $ids_in = array_map(fn($e) => (int)$e['id'], $upcoming_events);
-    $exclude = count($ids_in) ? 'AND id NOT IN (' . implode(',', $ids_in) . ')' : '';
-    $res2 = $conn->query("SELECT * FROM events WHERE 1=1 $exclude ORDER BY event_date DESC LIMIT $need");
-    if ($res2) while ($row = $res2->fetch_assoc()) $upcoming_events[] = $row;
-}
-
-// 14. Student Memories per category (for photo tabs)
-$memories = ['Student Activities' => [], 'Academic Excellence' => [], 'Sports' => []];
-$mem_res = $conn->query("SELECT title, image, category FROM student_memories ORDER BY uploaded_at DESC LIMIT 30");
-if ($mem_res) {
-    while ($mrow = $mem_res->fetch_assoc()) {
-        $cat = $mrow['category'];
-        if (isset($memories[$cat])) $memories[$cat][] = $mrow;
-    }
-}
-// Default fallback images when no memories uploaded yet
-$default_memories = [
-    'Student Activities' => 'assets/img/education/Student Activities.jpg',
-    'Academic Excellence' => 'assets/img/education/Excellence.jpg',
-    'Sports' => 'assets/img/education/Campus Life.jpg',
-];
-
+// ─── HELPER FUNCTIONS ─────────────────────────────────────────────────────────
 function maskEmail($email)
 {
     $parts = explode('@', $email);
@@ -297,20 +63,24 @@ function maskEmail($email)
     $maskedUsername = substr($username, 0, 2) . str_repeat('*', strlen($username) - 2);
     return $maskedUsername . '@' . $domain;
 }
+
 define('MAX_LOGIN_ATTEMPTS', 5);
 define('LOCKOUT_TIME', 900);
 define('LOG_FILE', 'logs/login_attempts.log');
+
 function getClientIP()
 {
     if (!empty($_SERVER['HTTP_CLIENT_IP'])) return $_SERVER['HTTP_CLIENT_IP'];
     elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) return $_SERVER['HTTP_X_FORWARDED_FOR'];
     else return $_SERVER['REMOTE_ADDR'];
 }
+
 function logLoginAttempt($username, $ip, $success)
 {
     $logEntry = sprintf("[%s] IP: %s | Username: %s | Success: %s\n", date('Y-m-d H:i:s'), $ip, htmlspecialchars($username), $success ? 'Yes' : 'No');
     file_put_contents(LOG_FILE, $logEntry, FILE_APPEND | LOCK_EX);
 }
+
 function isRateLimited($ip)
 {
     $attempts = $_SESSION['login_attempts'][$ip] ?? [];
@@ -319,12 +89,14 @@ function isRateLimited($ip)
     });
     return count($recentAttempts) >= MAX_LOGIN_ATTEMPTS;
 }
+
 function recordLoginAttempt($ip)
 {
     if (!isset($_SESSION['login_attempts'])) $_SESSION['login_attempts'] = [];
     if (!isset($_SESSION['login_attempts'][$ip])) $_SESSION['login_attempts'][$ip] = [];
     $_SESSION['login_attempts'][$ip][] = time();
 }
+
 function sanitizeInput($input)
 {
     return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
@@ -341,11 +113,245 @@ function star_html($rating)
     return $html;
 }
 
+function get_setting($conn, $key, $default = '')
+{
+    $k = $conn->real_escape_string($key);
+    $res = $conn->query("SELECT setting_value FROM school_settings WHERE setting_key = '$k' LIMIT 1");
+    if ($res && $row = $res->fetch_assoc()) return $row['setting_value'];
+    return $default;
+}
+
+function get_card($conn, $key)
+{
+    $k = $conn->real_escape_string($key);
+    $res = $conn->query("SELECT * FROM homepage_cards WHERE card_key = '$k' LIMIT 1");
+    if ($res && $row = $res->fetch_assoc()) return $row;
+    return ['title' => '', 'description' => '', 'icon' => '', 'image' => ''];
+}
+
+// ─── FETCH ALL DYNAMIC DATA (with APCu caching) ───────────────────────────────
+
+// ── CACHE BLOCK 1: Homepage aggregate stats (all 14 queries bundled) ──────────
+$stats = cache_get('stats:homepage');
+
+if ($stats === false) {
+    // CACHE MISS — run all queries and pack into one array
+
+    $total_students  = 0;
+    $active_students = 0;
+    $res = $conn->query("SELECT COUNT(*) as total FROM students");
+    if ($res && $row = $res->fetch_assoc()) $total_students = (int)$row['total'];
+
+    $res = $conn->query("SELECT COUNT(*) as total FROM students WHERE LOWER(status)='active'");
+    if ($res && $row = $res->fetch_assoc()) $active_students = (int)$row['total'];
+
+    $total_teachers = 0;
+    $res = $conn->query("SELECT COUNT(*) as total FROM teachers");
+    if ($res && $row = $res->fetch_assoc()) $total_teachers = (int)$row['total'];
+
+    $total_subjects = 0;
+    $res = $conn->query("SELECT teacher_subjects FROM teachers WHERE teacher_subjects IS NOT NULL AND teacher_subjects != ''");
+    $all_subjects = [];
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $parts = array_map('trim', explode(',', $row['teacher_subjects']));
+            foreach ($parts as $s) {
+                if ($s !== '') $all_subjects[] = strtolower($s);
+            }
+        }
+        $total_subjects = count(array_unique($all_subjects));
+    }
+    if ($total_subjects === 0) $total_subjects = 0;
+
+    $ratio_display = '0:1';
+    if ($total_teachers > 0) {
+        $ratio_num = round($total_students / $total_teachers, 0);
+        $ratio_display = $ratio_num . ':1';
+    }
+
+    $school_rating_val   = 0;
+    $school_rating_count = 0;
+    $res = $conn->query("SELECT AVG(rating) as avg_rating, COUNT(*) as total_reviews FROM school_ratings");
+    if ($res && $row = $res->fetch_assoc()) {
+        $school_rating_val   = round((float)$row['avg_rating'], 1);
+        $school_rating_count = (int)$row['total_reviews'];
+    }
+    if ($school_rating_val <= 0) {
+        $school_rating_val = 0;
+        $school_rating_count = 0;
+    }
+
+    $graduation_rate = 0;
+    $res = $conn->query("SELECT graduation_year, COUNT(*) as total,
+        SUM(CASE WHEN LOWER(status) IN ('completers','graduate','graduated','completer') THEN 1 ELSE 0 END) as completers
+        FROM students WHERE graduation_year IS NOT NULL AND graduation_year > 0
+        GROUP BY graduation_year");
+    if ($res && $res->num_rows > 0) {
+        $batch_rates = [];
+        while ($row = $res->fetch_assoc()) {
+            if ($row['total'] > 0) $batch_rates[] = ($row['completers'] / $row['total']) * 100;
+        }
+        if (count($batch_rates) > 0) $graduation_rate = round(array_sum($batch_rates) / count($batch_rates), 0);
+    }
+
+    $batch_success_pct  = 0;
+    $batch_success_year = null;
+    $stmt_bg = $conn->prepare(
+        "SELECT graduation_year, COUNT(*) AS total,
+                SUM(CASE WHEN LOWER(status) IN ('completers','graduate','graduated','completer') THEN 1 ELSE 0 END) AS completers
+         FROM students WHERE graduation_year IS NOT NULL AND graduation_year > 0
+         GROUP BY graduation_year ORDER BY graduation_year DESC LIMIT 1"
+    );
+    if ($stmt_bg) {
+        $stmt_bg->execute();
+        $res_bg = $stmt_bg->get_result();
+        if ($res_bg && $row_bg = $res_bg->fetch_assoc()) {
+            $batch_success_year = (int)$row_bg['graduation_year'];
+            if ((int)$row_bg['total'] > 0) {
+                $batch_success_pct = round(((int)$row_bg['completers'] / (int)$row_bg['total']) * 100, 0);
+            }
+        }
+        $stmt_bg->close();
+    }
+
+    $clubs_list       = [];
+    $total_clubs      = 0;
+    $clubs_has_logo   = false;
+    $clubs_has_status = false;
+    $clubs_col_check  = $conn->query("SHOW COLUMNS FROM clubs");
+    if ($clubs_col_check) {
+        while ($col = $clubs_col_check->fetch_assoc()) {
+            if ($col['Field'] === 'logo')   $clubs_has_logo   = true;
+            if ($col['Field'] === 'status') $clubs_has_status = true;
+        }
+    }
+    $logo_select  = $clubs_has_logo   ? ', c.logo' : ', NULL AS logo';
+    $status_where = $clubs_has_status ? "WHERE c.status = 'Active'" : '';
+    $has_club_members = $conn->query("SHOW TABLES LIKE 'club_members'")->num_rows > 0;
+    $member_select = $has_club_members
+        ? '(SELECT COUNT(*) FROM club_members cm WHERE cm.club_id = c.id) AS member_count'
+        : '0 AS member_count';
+    $res = $conn->query("SELECT c.id, c.name, c.description $logo_select, $member_select FROM clubs c $status_where ORDER BY c.name ASC");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) $clubs_list[] = $row;
+        $total_clubs = count($clubs_list);
+    }
+    if ($total_clubs === 0) {
+        $res2 = $conn->query("SELECT COUNT(*) as total FROM clubs");
+        if ($res2 && $row = $res2->fetch_assoc()) $total_clubs = (int)$row['total'];
+    }
+
+    $total_events = 0;
+    $res = $conn->query("SELECT COUNT(*) as total FROM events");
+    if ($res && $row = $res->fetch_assoc()) $total_events = (int)$row['total'];
+
+    $today_date         = date('Y-m-d');
+    $today_announcement = null;
+    $res = $conn->query("SELECT * FROM school_announcements WHERE announcement_date = '$today_date' LIMIT 1");
+    if ($res && $res->num_rows > 0) $today_announcement = $res->fetch_assoc();
+
+    $recent_news = [];
+    $res = $conn->query("SELECT * FROM news WHERE news_date <= CURDATE() ORDER BY news_date DESC, created_at DESC LIMIT 4");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) $recent_news[] = $row;
+    }
+    if (count($recent_news) < 4) {
+        $need    = 4 - count($recent_news);
+        $ids_in  = array_map(fn($n) => (int)$n['id'], $recent_news);
+        $exclude = count($ids_in) ? 'AND id NOT IN (' . implode(',', $ids_in) . ')' : '';
+        $res2 = $conn->query("SELECT * FROM news WHERE news_date > CURDATE() $exclude ORDER BY news_date ASC LIMIT $need");
+        if ($res2) while ($row = $res2->fetch_assoc()) $recent_news[] = $row;
+    }
+
+    $upcoming_events = [];
+    $res = $conn->query("SELECT * FROM events WHERE event_date >= CURDATE() ORDER BY event_date ASC LIMIT 4");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) $upcoming_events[] = $row;
+    }
+    if (count($upcoming_events) < 4) {
+        $need    = 4 - count($upcoming_events);
+        $ids_in  = array_map(fn($e) => (int)$e['id'], $upcoming_events);
+        $exclude = count($ids_in) ? 'AND id NOT IN (' . implode(',', $ids_in) . ')' : '';
+        $res2 = $conn->query("SELECT * FROM events WHERE 1=1 $exclude ORDER BY event_date DESC LIMIT $need");
+        if ($res2) while ($row = $res2->fetch_assoc()) $upcoming_events[] = $row;
+    }
+
+    $memories = ['Student Activities' => [], 'Academic Excellence' => [], 'Sports' => []];
+    $mem_res  = $conn->query("SELECT title, image, category FROM student_memories ORDER BY uploaded_at DESC LIMIT 30");
+    if ($mem_res) {
+        while ($mrow = $mem_res->fetch_assoc()) {
+            $cat = $mrow['category'];
+            if (isset($memories[$cat])) $memories[$cat][] = $mrow;
+        }
+    }
+
+    // Pack everything and cache
+    $stats = compact(
+        'total_students',
+        'active_students',
+        'total_teachers',
+        'total_subjects',
+        'ratio_display',
+        'school_rating_val',
+        'school_rating_count',
+        'graduation_rate',
+        'batch_success_pct',
+        'batch_success_year',
+        'clubs_list',
+        'total_clubs',
+        'total_events',
+        'today_date',
+        'today_announcement',
+        'recent_news',
+        'upcoming_events',
+        'memories'
+    );
+    cache_set('stats:homepage', $stats, CACHE_TTL_STATS);
+} else {
+    // CACHE HIT — restore all variables into scope instantly
+    extract($stats);
+}
+
+// Default fallback images when no memories uploaded yet
+$default_memories = [
+    'Student Activities' => 'assets/img/education/Student Activities.jpg',
+    'Academic Excellence' => 'assets/img/education/Excellence.jpg',
+    'Sports'              => 'assets/img/education/Campus Life.jpg',
+];
+
+// ── CACHE BLOCK 2: School settings ───────────────────────────────────────────
+$cached_settings = cache_get('settings:homepage');
+if ($cached_settings === false) {
+    $founding_year       = (int)get_setting($conn, 'school_founding_year', date('Y') - 7);
+    $years_of_excellence = date('Y') - $founding_year;
+    $about_photo         = get_setting($conn, 'about_photo', 'assets/img/front pic/Buyoan School.jpg');
+    $cta_photo           = get_setting($conn, 'cta_photo',   'assets/img/education/Students learning.jpg');
+    $cached_settings     = compact('founding_year', 'years_of_excellence', 'about_photo', 'cta_photo');
+    cache_set('settings:homepage', $cached_settings, CACHE_TTL_SETTINGS);
+} else {
+    extract($cached_settings);
+}
+
+// ── CACHE BLOCK 3: Homepage cards ─────────────────────────────────────────────
+foreach (['leadership', 'cultural', 'innovation', 'cert_card1', 'cert_card2', 'cert_card3'] as $_ck) {
+    $_var        = 'card_' . $_ck;
+    $_cached_card = cache_get("card:{$_ck}");
+    if ($_cached_card === false) {
+        $_cached_card = get_card($conn, $_ck);
+        cache_set("card:{$_ck}", $_cached_card, CACHE_TTL_CARD);
+    }
+    $$_var = $_cached_card;
+}
+// Variables now available: $card_leadership, $card_cultural, $card_innovation,
+//                          $cert_card1, $cert_card2, $cert_card3
+
+// ── CACHE BLOCK 4: Login handler ──────────────────────────────────────────────
 $login_error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['username'], $_POST['password'])) {
     $username  = sanitizeInput($_POST['username']);
     $password  = $_POST['password'];
     $client_ip = getClientIP();
+
     if (isRateLimited($client_ip)) {
         $login_error = 'Too many failed attempts. Please try again later.';
         logLoginAttempt($username, $client_ip, false);
@@ -359,41 +365,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['username'], $_POST['p
         logLoginAttempt($username, $client_ip, false);
     } else {
         $user_found = false;
-        $user_data = null;
-        $user_type = '';
-        $stmt = $conn->prepare("SELECT id, password FROM admin WHERE username = ?");
-        if ($stmt) {
-            $stmt->bind_param("s", $username);
-            if ($stmt->execute()) {
-                $result = $stmt->get_result();
-                if ($result->num_rows === 1) {
-                    $user_data = $result->fetch_assoc();
-                    $user_type = 'admin';
-                    $user_found = true;
-                }
-            }
-            $stmt->close();
-        }
-        if (!$user_found) {
-            $stmt = $conn->prepare("SELECT id, password FROM `sub_admin` WHERE username = ? AND status = 'approved'");
+        $user_data  = null;
+        $user_type  = '';
+
+        // Try admin cache first
+        $cached_admin = cache_get("admin:{$username}");
+        if ($cached_admin !== false) {
+            $user_data  = $cached_admin;
+            $user_type  = 'admin';
+            $user_found = true;
+        } else {
+            $stmt = $conn->prepare("SELECT id, password FROM admin WHERE username = ?");
             if ($stmt) {
                 $stmt->bind_param("s", $username);
                 if ($stmt->execute()) {
                     $result = $stmt->get_result();
                     if ($result->num_rows === 1) {
-                        $user_data = $result->fetch_assoc();
-                        $user_type = 'sub-admin';
+                        $user_data  = $result->fetch_assoc();
+                        $user_type  = 'admin';
                         $user_found = true;
+                        cache_set("admin:{$username}", $user_data, CACHE_TTL_CREDENTIALS);
                     }
                 }
                 $stmt->close();
             }
         }
+
+        // Try sub-admin cache if admin not found
+        if (!$user_found) {
+            $cached_sub = cache_get("subadmin:{$username}");
+            if ($cached_sub !== false && ($cached_sub['status'] ?? '') === 'approved') {
+                $user_data  = $cached_sub;
+                $user_type  = 'sub-admin';
+                $user_found = true;
+            } else {
+                $stmt = $conn->prepare("SELECT id, password, status FROM `sub_admin` WHERE username = ? AND status = 'approved'");
+                if ($stmt) {
+                    $stmt->bind_param("s", $username);
+                    if ($stmt->execute()) {
+                        $result = $stmt->get_result();
+                        if ($result->num_rows === 1) {
+                            $user_data  = $result->fetch_assoc();
+                            $user_type  = 'sub-admin';
+                            $user_found = true;
+                            cache_set("subadmin:{$username}", $user_data, CACHE_TTL_CREDENTIALS);
+                        }
+                    }
+                    $stmt->close();
+                }
+            }
+        }
+
+        // password_verify() always runs — cache never bypasses this
         if ($user_found && password_verify($password, $user_data['password'])) {
-            session_regenerate_id(true); // regenerate FIRST, then write session data
-            $_SESSION['user_id']   = $user_data['id'];
-            $_SESSION['username']  = $username;
-            $_SESSION['user_type'] = $user_type;
+            session_regenerate_id(true);
+            $_SESSION['user_id']    = $user_data['id'];
+            $_SESSION['username']   = $username;
+            $_SESSION['user_type']  = $user_type;
             $_SESSION['login_time'] = time();
             unset($_SESSION['login_attempts'][$client_ip]);
             logLoginAttempt($username, $client_ip, true);
@@ -405,7 +433,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['username'], $_POST['p
             logLoginAttempt($username, $client_ip, false);
         }
     }
-    if (!empty($login_error) && $login_error !== 'Invalid request. Please try again.' && $login_error !== 'Too many failed attempts. Please try again later.') {
+
+    if (
+        !empty($login_error)
+        && $login_error !== 'Invalid request. Please try again.'
+        && $login_error !== 'Too many failed attempts. Please try again later.'
+    ) {
         sleep(1);
     }
 }
@@ -2513,6 +2546,7 @@ $conn->close();
 
                     <!-- Contact -->
                     <div style="margin-bottom:20px;">
+
                         <label style="display:block;font-size:11.5px;font-weight:600;color:#1a3a2a;margin-bottom:7px;">Contact for OTP <span style="color:#e53935;">*</span></label>
                         <div style="display:flex;gap:16px;margin-bottom:8px;">
                             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#1a3a2a;font-weight:500;">
@@ -2920,11 +2954,13 @@ $conn->close();
                 fd.append('gender', gender);
                 fd.append('contact_method', isEmail ? 'email' : 'phone');
                 fd.append('password', pw);
+                fd.append('account_type', document.getElementById('scAccountType').value);
                 fd.append('confirm_password', cpw);
                 fd.append('email', isEmail ? email : '');
                 fd.append('phone', isEmail ? '' : phone);
 
                 fetch(SIGNUP_URL, {
+
                     method: 'POST',
                     body: fd
                 }).then(r => r.json()).then(d => {

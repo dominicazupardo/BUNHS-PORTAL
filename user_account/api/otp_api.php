@@ -1,9 +1,20 @@
 <?php
-// ─────────────────────────────────────────────────────────────
-// otp_api.php — OTP Send / Verify / Resend
-// PHP 5.4+ compatible — no ?? operator, no type hints, no const
-// Fixed: db path resolution, PHPMailer path resolution
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  otp_api.php — CACHED VERSION
+//  PHP 5.4+ compatible — no ?? operator, no type hints, no const
+//
+//  CACHE INTEGRATION:
+//  ┌─────────────────────────────────────────────────────────────────────────┐
+//  │ OTP codes themselves live in $_SESSION — NOT in APCu.                   │
+//  │ Sessions are per-user, per-browser, and expire independently per user.  │
+//  │ Storing OTPs in a shared cache would be a security hole.                │
+//  │                                                                         │
+//  │ What APCu DOES here:                                                    │
+//  │   After verify_phone_otp / verify_email_otp succeeds and the DB        │
+//  │   UPDATE runs, we invalidate the student's notification preference      │
+//  │   cache so get_preference returns fresh data on the next call.          │
+//  └─────────────────────────────────────────────────────────────────────────┘
+// ═══════════════════════════════════════════════════════════════════════════════
 
 function _otp_shutdown()
 {
@@ -13,7 +24,7 @@ function _otp_shutdown()
         if (!headers_sent()) header('Content-Type: application/json');
         echo json_encode(array(
             'success' => false,
-            'message' => 'Server error: ' . $e['message'] . ' (line ' . $e['line'] . ')'
+            'message' => 'Server error: ' . $e['message'] . ' (line ' . $e['line'] . ')',
         ));
     }
 }
@@ -24,11 +35,11 @@ error_reporting(0);
 header('Content-Type: application/json');
 
 ini_set('session.cookie_httponly', 1);
-ini_set('session.cookie_secure', 0);
+ini_set('session.cookie_secure',   0);
 ini_set('session.use_only_cookies', 1);
 session_start();
 
-// ── DB: walk UP the directory tree until db_connection.php is found ──
+// ── DB: walk UP the directory tree until db_connection.php is found ───────────
 $_db     = null;
 $_search = __DIR__;
 for ($_i = 0; $_i < 6; $_i++) {
@@ -44,12 +55,35 @@ for ($_i = 0; $_i < 6; $_i++) {
 if (!$_db) {
     echo json_encode(array(
         'success' => false,
-        'message' => 'Cannot find db_connection.php. Searched from: ' . __DIR__
+        'message' => 'Cannot find db_connection.php. Searched from: ' . __DIR__,
     ));
     exit;
 }
 include $_db;
 
+// ── Load caching layer (walk up same way) ─────────────────────────────────────
+$_ch     = null;
+$_search = __DIR__;
+for ($_i = 0; $_i < 6; $_i++) {
+    $_cand = $_search . '/cache_helper.php';
+    if (file_exists($_cand)) {
+        $_ch = $_cand;
+        break;
+    }
+    $_parent = dirname($_search);
+    if ($_parent === $_search) break;
+    $_search = $_parent;
+}
+if ($_ch) {
+    include_once $_ch;
+} else {
+    // Graceful no-op stubs when cache_helper is not available
+    if (!function_exists('cache_delete')) {
+        function cache_delete($k) {}
+    }
+}
+
+// ── Session guard ─────────────────────────────────────────────────────────────
 if (!isset($_SESSION['student_id'])) {
     echo json_encode(array('success' => false, 'message' => 'Session expired. Please log in again.'));
     exit;
@@ -71,7 +105,7 @@ $SEM_SENDER   = 'BUNHS';
 
 $action = isset($_POST['action']) ? trim($_POST['action']) : '';
 
-// ── HELPERS ───────────────────────────────────────────────────
+// ── HELPERS — unchanged from original ─────────────────────────────────────────
 
 function _genOtp($len)
 {
@@ -99,7 +133,6 @@ function _maskEmail($e)
 
 function _sendEmail($to, $otp, $smtp)
 {
-    // Walk UP the directory tree to find vendor/autoload.php
     $autoload = null;
     $search   = __DIR__;
     for ($i = 0; $i < 6; $i++) {
@@ -112,12 +145,10 @@ function _sendEmail($to, $otp, $smtp)
         if ($parent === $search) break;
         $search = $parent;
     }
-
     if (!$autoload) {
         error_log('DEV OTP email [' . $to . ']: ' . $otp);
-        return true; // dev mode — PHPMailer not installed
+        return true;
     }
-
     require_once $autoload;
     $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
     try {
@@ -153,7 +184,7 @@ function _sendSms($phone, $otp, $key, $sender)
     if (substr($clean, 0, 1) === '0') $clean = '63' . substr($clean, 1);
     if ($key === 'YOUR_SEMAPHORE_API_KEY') {
         error_log('DEV OTP sms [' . $clean . ']: ' . $otp);
-        return true; // dev mode
+        return true;
     }
     $ch = curl_init();
     curl_setopt_array($ch, array(
@@ -163,7 +194,7 @@ function _sendSms($phone, $otp, $key, $sender)
             'apikey'     => $key,
             'number'     => $clean,
             'message'    => 'Your BUNHS notification code: ' . $otp . ' (expires in 5 min)',
-            'sendername' => $sender
+            'sendername' => $sender,
         )),
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT        => 15,
@@ -180,10 +211,11 @@ $smtpCfg = array(
     'user' => $SMTP_USER,
     'pass' => $SMTP_PASS,
     'from' => $SMTP_FROM,
-    'name' => $SMTP_NAME
+    'name' => $SMTP_NAME,
 );
 
-// ── send_phone_otp ────────────────────────────────────────────
+
+// ── send_phone_otp — unchanged; OTPs stay in $_SESSION ────────────────────────
 if ($action === 'send_phone_otp') {
     $phone = isset($_POST['phone']) ? trim($_POST['phone']) : '';
     if ($phone === '') {
@@ -192,11 +224,11 @@ if ($action === 'send_phone_otp') {
     }
     $otp = _genOtp($OTP_LENGTH);
     $_SESSION['notif_phone_otp'] = array(
-        'otp'      => $otp,
-        'expires'  => time() + $OTP_EXPIRY,
+        'otp' => $otp,
+        'expires' => time() + $OTP_EXPIRY,
         'attempts' => 0,
-        'resends'  => 0,
-        'phone'    => $phone
+        'resends' => 0,
+        'phone' => $phone,
     );
     $sent = _sendSms($phone, $otp, $SEM_KEY, $SEM_SENDER);
     if ($sent) {
@@ -208,7 +240,8 @@ if ($action === 'send_phone_otp') {
     exit;
 }
 
-// ── send_email_otp ────────────────────────────────────────────
+
+// ── send_email_otp — unchanged; OTPs stay in $_SESSION ────────────────────────
 if ($action === 'send_email_otp') {
     $email = isset($_POST['email']) ? trim($_POST['email']) : '';
     if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -217,11 +250,11 @@ if ($action === 'send_email_otp') {
     }
     $otp = _genOtp($OTP_LENGTH);
     $_SESSION['notif_email_otp'] = array(
-        'otp'      => $otp,
-        'expires'  => time() + $OTP_EXPIRY,
+        'otp' => $otp,
+        'expires' => time() + $OTP_EXPIRY,
         'attempts' => 0,
-        'resends'  => 0,
-        'email'    => $email
+        'resends' => 0,
+        'email' => $email,
     );
     $sent = _sendEmail($email, $otp, $smtpCfg);
     if ($sent) {
@@ -233,7 +266,11 @@ if ($action === 'send_email_otp') {
     exit;
 }
 
-// ── verify_phone_otp ──────────────────────────────────────────
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  verify_phone_otp
+//  ▼ CACHE PATCH — after successful DB UPDATE, invalidate notif preference cache
+// ═════════════════════════════════════════════════════════════════════════════
 if ($action === 'verify_phone_otp') {
     $input = strtoupper(trim(isset($_POST['otp']) ? $_POST['otp'] : ''));
     if (!isset($_SESSION['notif_phone_otp'])) {
@@ -257,6 +294,8 @@ if ($action === 'verify_phone_otp') {
         echo json_encode(array('success' => false, 'message' => 'Invalid code. ' . $rem . ' attempt(s) remaining.'));
         exit;
     }
+
+    // ── OTP correct — update DB ───────────────────────────────────────────────
     $sid  = $_SESSION['student_id'];
     $stmt = $conn->prepare("UPDATE students SET phone_verified = 1 WHERE student_id = ?");
     if ($stmt) {
@@ -265,11 +304,19 @@ if ($action === 'verify_phone_otp') {
         $stmt->close();
     }
     unset($_SESSION['notif_phone_otp']);
+
+    // ▼ CACHE PATCH — phone_verified changed in DB; stale notif cache is now wrong
+    cache_delete("notif:{$sid}");
+
     echo json_encode(array('success' => true));
     exit;
 }
 
-// ── verify_email_otp ──────────────────────────────────────────
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  verify_email_otp
+//  ▼ CACHE PATCH — same as verify_phone_otp: invalidate notif preference cache
+// ═════════════════════════════════════════════════════════════════════════════
 if ($action === 'verify_email_otp') {
     $input = strtoupper(trim(isset($_POST['otp']) ? $_POST['otp'] : ''));
     if (!isset($_SESSION['notif_email_otp'])) {
@@ -293,6 +340,8 @@ if ($action === 'verify_email_otp') {
         echo json_encode(array('success' => false, 'message' => 'Invalid code. ' . $rem . ' attempt(s) remaining.'));
         exit;
     }
+
+    // ── OTP correct — update DB ───────────────────────────────────────────────
     $sid  = $_SESSION['student_id'];
     $stmt = $conn->prepare("UPDATE students SET email_verified = 1 WHERE student_id = ?");
     if ($stmt) {
@@ -301,11 +350,16 @@ if ($action === 'verify_email_otp') {
         $stmt->close();
     }
     unset($_SESSION['notif_email_otp']);
+
+    // ▼ CACHE PATCH — email_verified changed in DB; invalidate stale notif cache
+    cache_delete("notif:{$sid}");
+
     echo json_encode(array('success' => true));
     exit;
 }
 
-// ── resend_otp ────────────────────────────────────────────────
+
+// ── resend_otp — unchanged; OTPs stay in $_SESSION ────────────────────────────
 if ($action === 'resend_otp') {
     $type = isset($_POST['type']) ? trim($_POST['type']) : '';
 
@@ -319,7 +373,7 @@ if ($action === 'resend_otp') {
             echo json_encode(array('success' => false, 'message' => 'Resend limit reached.'));
             exit;
         }
-        $otp        = _genOtp($OTP_LENGTH);
+        $otp           = _genOtp($OTP_LENGTH);
         $d['otp']      = $otp;
         $d['expires']  = time() + $OTP_EXPIRY;
         $d['attempts'] = 0;
@@ -329,7 +383,7 @@ if ($action === 'resend_otp') {
         echo json_encode(array(
             'success' => $sent,
             'message' => $sent ? 'New code sent. (' . $rem . ' resend(s) left)' : 'Failed to send SMS.',
-            'dev_otp' => $otp
+            'dev_otp' => $otp,
         ));
         exit;
     }
@@ -354,7 +408,7 @@ if ($action === 'resend_otp') {
         echo json_encode(array(
             'success' => $sent,
             'message' => $sent ? 'New code sent. (' . $rem . ' resend(s) left)' : 'Failed to send email.',
-            'dev_otp' => $otp
+            'dev_otp' => $otp,
         ));
         exit;
     }

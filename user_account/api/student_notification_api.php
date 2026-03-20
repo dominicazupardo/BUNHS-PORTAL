@@ -1,9 +1,14 @@
 <?php
-// ─────────────────────────────────────────────────────────────
-// student_notification_api.php
-// PHP 5.4+ compatible — no ?? operator, no type hints
-// Fixed: db path resolution, missing-column safety, 500 errors
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  student_notification_api.php — CACHED VERSION
+//  PHP 5.4+ compatible — no ?? operator, no type hints
+//  Fixed: db path resolution, missing-column safety, 500 errors
+//
+//  CACHE INTEGRATION:
+//    get_preference  → served from cache (120 s TTL) on repeated AJAX calls
+//    save_preference → invalidates cache immediately
+//    skip            → invalidates cache immediately
+// ═══════════════════════════════════════════════════════════════════════════════
 
 function _sna_shutdown()
 {
@@ -13,7 +18,7 @@ function _sna_shutdown()
         if (!headers_sent()) header('Content-Type: application/json');
         echo json_encode(array(
             'success' => false,
-            'message' => 'Server error: ' . $e['message'] . ' (line ' . $e['line'] . ')'
+            'message' => 'Server error: ' . $e['message'] . ' (line ' . $e['line'] . ')',
         ));
     }
 }
@@ -24,14 +29,11 @@ error_reporting(0);
 header('Content-Type: application/json');
 
 ini_set('session.cookie_httponly', 1);
-ini_set('session.cookie_secure', 0);
+ini_set('session.cookie_secure',   0);
 ini_set('session.use_only_cookies', 1);
 session_start();
 
-// ── DB: walk UP the directory tree until db_connection.php is found ──
-// This file lives at: BUNHS_School_System/user_account/api/
-// db_connection.php is at: BUNHS_School_System/
-// So we need to climb 2 levels. The loop handles any depth safely.
+// ── DB: walk UP the directory tree until db_connection.php is found ───────────
 $_db     = null;
 $_search = __DIR__;
 for ($_i = 0; $_i < 6; $_i++) {
@@ -44,17 +46,47 @@ for ($_i = 0; $_i < 6; $_i++) {
     if ($_parent === $_search) break;
     $_search = $_parent;
 }
-
 if (!$_db) {
     echo json_encode(array(
         'success' => false,
-        'message' => 'Cannot find db_connection.php. Searched from: ' . __DIR__
+        'message' => 'Cannot find db_connection.php. Searched from: ' . __DIR__,
     ));
     exit;
 }
-include $_db;   // provides $conn (mysqli)
+include $_db;
 
-// ── Session guard ─────────────────────────────────────────────
+// ── Load caching layer (walk up same way) ─────────────────────────────────────
+$_ch     = null;
+$_search = __DIR__;
+for ($_i = 0; $_i < 6; $_i++) {
+    $_cand = $_search . '/cache_helper.php';
+    if (file_exists($_cand)) {
+        $_ch = $_cand;
+        break;
+    }
+    $_parent = dirname($_search);
+    if ($_parent === $_search) break;
+    $_search = $_parent;
+}
+if ($_ch) {
+    include_once $_ch;
+} else {
+    // APCu not available — define no-op stubs so the rest of the file works
+    if (!function_exists('cache_get')) {
+        function cache_get($k)
+        {
+            return false;
+        }
+    }
+    if (!function_exists('cache_set')) {
+        function cache_set($k, $v, $t) {}
+    }
+    if (!function_exists('cache_delete')) {
+        function cache_delete($k) {}
+    }
+}
+
+// ── Session guard ─────────────────────────────────────────────────────────────
 if (!isset($_SESSION['student_id'])) {
     echo json_encode(array('success' => false, 'message' => 'Session expired. Please log in again.'));
     exit;
@@ -66,17 +98,19 @@ $preference = isset($_POST['preference']) ? trim($_POST['preference']) : '';
 $phone      = isset($_POST['phone'])      ? trim($_POST['phone'])      : '';
 $email      = isset($_POST['email'])      ? trim($_POST['email'])      : '';
 
-// ── Ensure all required columns exist (IF NOT EXISTS = zero cost if already there) ──
+// ── Ensure required columns exist (zero cost when already present) ────────────
 $conn->query("ALTER TABLE students ADD COLUMN IF NOT EXISTS notification_preference VARCHAR(10)  DEFAULT NULL");
 $conn->query("ALTER TABLE students ADD COLUMN IF NOT EXISTS phone_verified          TINYINT(1)   DEFAULT 0");
 $conn->query("ALTER TABLE students ADD COLUMN IF NOT EXISTS email_verified          TINYINT(1)   DEFAULT 0");
 $conn->query("ALTER TABLE students ADD COLUMN IF NOT EXISTS phone                   VARCHAR(20)  DEFAULT NULL");
 $conn->query("ALTER TABLE students ADD COLUMN IF NOT EXISTS email                   VARCHAR(255) DEFAULT NULL");
 
-// ─────────────────────────────────────────────────────────────
-// ACTION: skip
-// ─────────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ACTION: skip
+// ══════════════════════════════════════════════════════════════════════════════
 if ($action === 'skip') {
+
     $_SESSION['notif_dismissed'] = true;
 
     $stmt = $conn->prepare("UPDATE students SET notification_preference = 'none' WHERE student_id = ?");
@@ -85,13 +119,18 @@ if ($action === 'skip') {
         $stmt->execute();
         $stmt->close();
     }
+
+    // Invalidate cached preference — student has now set it to 'none'
+    cache_delete("notif:{$studentId}");
+
     echo json_encode(array('success' => true));
     exit;
 }
 
-// ─────────────────────────────────────────────────────────────
-// ACTION: save_preference
-// ─────────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ACTION: save_preference
+// ══════════════════════════════════════════════════════════════════════════════
 if ($action === 'save_preference') {
 
     if ($preference !== 'phone' && $preference !== 'email' && $preference !== 'both') {
@@ -130,8 +169,8 @@ if ($action === 'save_preference') {
         $bindVals[]  = $email;
     }
 
-    $bindTypes  .= 's';
-    $bindVals[]  = $studentId;
+    $bindTypes .= 's';
+    $bindVals[] = $studentId;
 
     $sql  = 'UPDATE students SET ' . implode(', ', $setParts) . ' WHERE student_id = ?';
     $stmt = $conn->prepare($sql);
@@ -151,6 +190,10 @@ if ($action === 'save_preference') {
 
     if ($ok) {
         $_SESSION['notification_preference'] = $preference;
+
+        // Invalidate stale preference cache — next get_preference will re-fetch from DB
+        cache_delete("notif:{$studentId}");
+
         echo json_encode(array('success' => true));
     } else {
         echo json_encode(array('success' => false, 'message' => 'Failed to save preference. Please try again.'));
@@ -158,11 +201,24 @@ if ($action === 'save_preference') {
     exit;
 }
 
-// ─────────────────────────────────────────────────────────────
-// ACTION: get_preference
-// ─────────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ACTION: get_preference
+//  Most frequently called action — cached aggressively (120 s TTL).
+// ══════════════════════════════════════════════════════════════════════════════
 if ($action === 'get_preference') {
-    // All columns are guaranteed to exist from the ALTER TABLE block above
+
+    $cache_key = "notif:{$studentId}";
+
+    // ── Try cache first ───────────────────────────────────────────────────────
+    $cached = cache_get($cache_key);
+    if ($cached !== false) {
+        // CACHE HIT — return stored preference object without touching DB
+        echo json_encode($cached);
+        exit;
+    }
+
+    // ── CACHE MISS — query DB ─────────────────────────────────────────────────
     $stmt = $conn->prepare(
         "SELECT notification_preference, phone, email, phone_verified, email_verified
          FROM students WHERE student_id = ? LIMIT 1"
@@ -177,18 +233,24 @@ if ($action === 'get_preference') {
     $stmt->close();
 
     if ($row) {
-        echo json_encode(array(
+        $payload = array(
             'success'        => true,
             'preference'     => $row['notification_preference'],
             'phone'          => $row['phone'],
             'email'          => $row['email'],
             'phone_verified' => (bool)$row['phone_verified'],
-            'email_verified' => (bool)$row['email_verified']
-        ));
+            'email_verified' => (bool)$row['email_verified'],
+        );
+
+        // Store in cache — next AJAX call skips the SELECT entirely
+        cache_set($cache_key, $payload, CACHE_TTL_NOTIF_PREF);
+
+        echo json_encode($payload);
     } else {
         echo json_encode(array('success' => false, 'message' => 'Student not found.'));
     }
     exit;
 }
+
 
 echo json_encode(array('success' => false, 'message' => 'Invalid action: ' . htmlspecialchars($action)));

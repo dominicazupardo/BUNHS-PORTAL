@@ -1,20 +1,26 @@
 <?php
-// ─────────────────────────────────────────────────────────────
-//  Login handler — runs before any HTML output
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//  login.php — CACHED VERSION
+//  Admin-only login page.  Replace the existing login.php with this file.
+//  Only the PHP handler block changes; the HTML below it is untouched.
+// ═══════════════════════════════════════════════════════════════════════════════
+
 session_start();
 
-// If already logged in, go straight to the dashboard
+// Redirect already-authenticated admins
 if (isset($_SESSION['admin_id'])) {
     header('Location: admin_account/admin_dashboard.php');
     exit;
 }
 
+// Load caching layer — must come BEFORE any credential lookup
+require_once __DIR__ . '/cache_helper.php';
+
 $login_error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Include DB connection (adjust path to match your project)
-    include 'db_connection.php';   // provides $conn (mysqli)
+
+    include __DIR__ . '/db_connection.php';   // provides $conn (mysqli)
 
     $username = trim($_POST['username'] ?? '');
     $password = trim($_POST['password'] ?? '');
@@ -22,18 +28,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($username === '' || $password === '') {
         $login_error = 'Please enter both username and password.';
     } else {
-        // Fetch admin by username
-        $stmt = $conn->prepare(
-            "SELECT id, password FROM `admin` WHERE username = ? LIMIT 1"
-        );
-        $stmt->bind_param('s', $username);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $admin  = $result->fetch_assoc();
-        $stmt->close();
 
+        $admin     = null;
+        $cache_key = "admin:{$username}";
+
+        // ── 1. Try cache first ────────────────────────────────────────────────
+        $cached = cache_get($cache_key);
+
+        if ($cached !== false) {
+            // CACHE HIT — credential row already in shared memory
+            $admin = $cached;
+        } else {
+            // CACHE MISS — hit the database and store the result
+            $stmt = $conn->prepare(
+                "SELECT id, password FROM `admin` WHERE username = ? LIMIT 1"
+            );
+            if ($stmt) {
+                $stmt->bind_param('s', $username);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $row    = $result->fetch_assoc();
+                $stmt->close();
+
+                if ($row) {
+                    $admin = $row;
+                    // Store in APCu so the next login for this admin skips DB
+                    cache_set($cache_key, $admin, CACHE_TTL_CREDENTIALS);
+                }
+            }
+        }
+
+        // ── 2. Verify password — ALWAYS, even on cache hit ───────────────────
+        // The cache only eliminates the SELECT.  The bcrypt check always runs.
         if ($admin && password_verify($password, $admin['password'])) {
-            // Regenerate session ID to prevent fixation
             session_regenerate_id(true);
             $_SESSION['admin_id']       = $admin['id'];
             $_SESSION['admin_username'] = $username;
@@ -62,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com" rel="preconnect">
     <link href="https://fonts.gstatic.com" rel="preconnect" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Raleway:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900&family=Raleway:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900&display=swap" rel="stylesheet">
 
     <!-- Vendor CSS Files -->
     <link href="assets/vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
@@ -88,13 +115,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 <?php if ($login_error): ?>
                     <div class="alert alert-danger" style="
-            background:#fdf1f1;color:#b94040;border:1px solid #f0d5d5;
-            border-radius:8px;padding:11px 15px;margin-bottom:16px;
-            font-size:13.5px;display:flex;align-items:center;gap:8px;">
+                        background:#fdf1f1;color:#b94040;border:1px solid #f0d5d5;
+                        border-radius:8px;padding:11px 15px;margin-bottom:16px;
+                        font-size:13.5px;display:flex;align-items:center;gap:8px;">
                         <i class="fas fa-exclamation-circle"></i>
-                        <?php echo htmlspecialchars($login_error, ENT_QUOTES, 'UTF-8'); ?>
+                        <?= htmlspecialchars($login_error, ENT_QUOTES, 'UTF-8') ?>
                     </div>
                 <?php endif; ?>
+
                 <div class="form-group">
                     <label for="username" class="form-label">Username</label>
                     <input type="text" class="form-control" id="username" name="username" required>
@@ -148,7 +176,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 isValid = false;
             }
 
-            // If client-side validation fails, stop submission; otherwise let it POST normally
             if (!isValid) e.preventDefault();
         });
     </script>

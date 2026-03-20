@@ -1,16 +1,15 @@
 <?php
 
 /**
- * student_signup.php  (lives in user_account/)
+ * student_signup.php (ENHANCED) — supports both Students and Parents
  * ─────────────────────────────────────────────────────────────
- * Handles the student signup popup from index.php.
- *
+ * 
  * Actions (POST):
  *   sc_register   – validate fields, hash password, store pending, send OTP
- *   sc_verify_otp – verify OTP, INSERT student row, set session → Dashboard
+ *   sc_verify_otp – verify OTP, INSERT student/parent row, set session
  *   sc_resend_otp – regenerate + resend OTP
  *
- * Requires: ALTER TABLE students ADD COLUMN IF NOT EXISTS password VARCHAR(255) DEFAULT NULL;
+ * Requires: ALTER TABLE students ADD COLUMN IF NOT EXISTS user_type VARCHAR(20) DEFAULT 'student';
  * ─────────────────────────────────────────────────────────────
  */
 
@@ -49,6 +48,11 @@ if (!$_db) {
     exit;
 }
 include $_db; // → $conn (mysqli)
+
+// ── Ensure user_type column exists (parent table support) ────────────────────
+$conn->query("ALTER TABLE students ADD COLUMN IF NOT EXISTS user_type VARCHAR(20) DEFAULT 'student'");
+$conn->query("ALTER TABLE students ADD COLUMN IF NOT EXISTS relationship_to_student VARCHAR(100) DEFAULT NULL");
+$conn->query("ALTER TABLE students ADD COLUMN IF NOT EXISTS linked_student_id VARCHAR(50) DEFAULT NULL");
 
 // ── SMTP config ───────────────────────────────────────────────
 define('SC_SMTP_HOST', 'smtp.gmail.com');
@@ -115,7 +119,7 @@ function sc_send_email(string $to, string $otp): bool
         $mail->Subject = 'BUNHS — Your Registration Verification Code';
         $mail->Body = '<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:30px;border:1px solid #dde8e2;border-radius:16px;">
             <h2 style="color:#1a3a2a;text-align:center;">Registration Code</h2>
-            <p style="color:#555;text-align:center;">Use this code to complete your BUNHS student account registration.</p>
+            <p style="color:#555;text-align:center;">Use this code to complete your BUNHS account registration.</p>
             <div style="background:#f1f3f4;border-radius:8px;padding:20px;text-align:center;
                 letter-spacing:10px;font-size:36px;font-weight:bold;color:#202124;margin:24px 0;">'
             . htmlspecialchars($otp, ENT_QUOTES) . '</div>
@@ -166,6 +170,7 @@ $action = trim($_POST['action'] ?? '');
 // ════════════════════════════════════════════════════════════
 if ($action === 'sc_register') {
 
+    $user_type      = strtolower(trim($_POST['user_type'] ?? 'student'));
     $first_name     = trim($_POST['first_name']     ?? '');
     $middle_initial = strtoupper(trim($_POST['middle_initial'] ?? ''));
     $last_name      = trim($_POST['last_name']      ?? '');
@@ -178,7 +183,19 @@ if ($action === 'sc_register') {
     $password       = $_POST['password']            ?? '';
     $confirm_pw     = $_POST['confirm_password']    ?? '';
 
+    // NEW PARENT-SPECIFIC FIELDS
+    $relationship   = trim($_POST['relationship_to_student'] ?? '');
+    $occupation     = trim($_POST['occupation']     ?? '');
+    $home_address   = trim($_POST['home_address']   ?? '');
+    $emergency_contact = trim($_POST['emergency_contact_name'] ?? '');
+    $emergency_phone   = trim($_POST['emergency_contact_phone'] ?? '');
+
     // ── Validation ────────────────────────────────────────────
+    if ($user_type !== 'student' && $user_type !== 'parent') {
+        echo json_encode(['success' => false, 'message' => 'Invalid user type.']);
+        exit;
+    }
+
     if (!$first_name) {
         echo json_encode(['success' => false, 'message' => 'First name is required.']);
         exit;
@@ -187,14 +204,27 @@ if ($action === 'sc_register') {
         echo json_encode(['success' => false, 'message' => 'Last name is required.']);
         exit;
     }
-    if ($age < 10 || $age > 25) {
-        echo json_encode(['success' => false, 'message' => 'Enter a valid age (10–25).']);
-        exit;
+
+    // Student-specific validation
+    if ($user_type === 'student') {
+        if ($age < 10 || $age > 25) {
+            echo json_encode(['success' => false, 'message' => 'Enter a valid age (10–25).']);
+            exit;
+        }
+        if (!$gender) {
+            echo json_encode(['success' => false, 'message' => 'Please select a gender.']);
+            exit;
+        }
     }
-    if (!$gender) {
-        echo json_encode(['success' => false, 'message' => 'Please select a gender.']);
-        exit;
+
+    // Parent-specific validation
+    if ($user_type === 'parent') {
+        if (!$relationship) {
+            echo json_encode(['success' => false, 'message' => 'Please select your relationship to the student.']);
+            exit;
+        }
     }
+
     if (strlen($password) < 8) {
         echo json_encode(['success' => false, 'message' => 'Password must be at least 8 characters.']);
         exit;
@@ -233,6 +263,7 @@ if ($action === 'sc_register') {
 
     // ── Store pending in session (DB insert happens after OTP) ─
     $_SESSION['sc_pending'] = [
+        'user_type'      => $user_type,
         'first_name'     => $first_name,
         'middle_initial' => $middle_initial,
         'last_name'      => $last_name,
@@ -243,6 +274,11 @@ if ($action === 'sc_register') {
         'email'          => $email,
         'phone'          => $phone,
         'password'       => $hashed_password,
+        'relationship'   => $relationship,
+        'occupation'     => $occupation,
+        'home_address'   => $home_address,
+        'emergency_contact' => $emergency_contact,
+        'emergency_phone'   => $emergency_phone,
         'otp'            => $otp,
         'otp_expires'    => time() + SC_OTP_EXPIRY,
         'otp_attempts'   => 0,
@@ -265,7 +301,7 @@ if ($action === 'sc_register') {
 }
 
 // ════════════════════════════════════════════════════════════
-// sc_verify_otp — check OTP, INSERT student, set session
+// sc_verify_otp — check OTP, INSERT student/parent, set session
 // ════════════════════════════════════════════════════════════
 if ($action === 'sc_verify_otp') {
 
@@ -295,19 +331,25 @@ if ($action === 'sc_verify_otp') {
         exit;
     }
 
-    // ✅ OTP correct — INSERT student row
+    // ✅ OTP correct — INSERT student/parent row
     // Build dynamically so unknown optional columns never crash the INSERT.
     $cols         = sc_table_columns($conn);
     $insert_cols  = [];
     $insert_vals  = [];
     $insert_types = '';
 
-    // ── Required columns (confirmed present in your schema) ───
+    // ── Required columns ───────────────────────────────────────
     $required = [
         ['first_name',  's', $p['first_name']],
         ['last_name',   's', $p['last_name']],
-        ['gender',      's', $p['gender']],
+        ['user_type',   's', $p['user_type']],  // NEW: store user type
     ];
+
+    // Only add gender for students
+    if ($p['user_type'] === 'student') {
+        $required[] = ['gender', 's', $p['gender']];
+    }
+
     foreach ($required as [$col, $type, $val]) {
         if (sc_has_col($conn, $col)) {
             $insert_cols[] = $col;
@@ -316,14 +358,14 @@ if ($action === 'sc_verify_otp') {
         }
     }
 
-    // ── Password (will exist after running add_password_column.sql) ─
+    // ── Password ────────────────────────────────────────────────
     if (sc_has_col($conn, 'password')) {
         $insert_cols[] = 'password';
         $insert_vals[] = $p['password'];
         $insert_types .= 's';
     }
 
-    // ── Optional columns — added only if they exist in your table ─
+    // ── Optional columns — added only if they exist ─────────────
     $optional = [
         'middle_initial'          => ['s', $p['middle_initial']],
         'suffix'                  => ['s', $p['suffix']],
@@ -334,7 +376,11 @@ if ($action === 'sc_verify_otp') {
         'phone_verified'          => ['i', ($p['method'] === 'phone' ? 1 : 0)],
         'enrollment_status'       => ['s', 'Enrolled'],
         'date_enrolled'           => ['s', date('Y-m-d')],
+        'relationship_to_student' => ['s', $p['user_type'] === 'parent' ? $p['relationship'] : null],
+        'occupation'              => ['s', $p['user_type'] === 'parent' ? $p['occupation'] : null],
+        'address'                 => ['s', $p['user_type'] === 'parent' ? $p['home_address'] : null],
     ];
+
     foreach ($optional as $col => [$type, $val]) {
         if (sc_has_col($conn, $col)) {
             $insert_cols[] = $col;
@@ -350,7 +396,6 @@ if ($action === 'sc_verify_otp') {
         $insert_types .= 's';
     }
     if ($p['method'] === 'phone') {
-        // Store in whichever phone column exists
         $phone_col = sc_has_col($conn, 'phone') ? 'phone'
             : (sc_has_col($conn, 'phone_number') ? 'phone_number' : null);
         if ($phone_col) {
@@ -397,13 +442,20 @@ if ($action === 'sc_verify_otp') {
     $new_id = (int)$conn->insert_id;
     $stmt->close();
 
-    // ── Set session so Dashboard.php auth passes immediately ──
+    // ── Set session so Dashboard/Profile auth passes immediately ──
     session_regenerate_id(true);
-    $_SESSION['student_id']   = $new_id;
-    $_SESSION['student_name'] = trim($p['first_name'] . ' ' . $p['last_name']);
-    $_SESSION['grade_level']  = '';
-    $_SESSION['user_type']    = 'student';
-    $_SESSION['login_method'] = $p['method'];
+    $_SESSION['user_id']       = $new_id;
+    $_SESSION['student_id']    = $new_id;  // For backward compatibility
+    $_SESSION['user_type']     = $p['user_type'];
+    $_SESSION['student_name']  = trim($p['first_name'] . ' ' . $p['last_name']);
+    $_SESSION['login_method']  = $p['method'];
+    $_SESSION['grade_level']   = '';
+
+    // Store parent-specific session data
+    if ($p['user_type'] === 'parent') {
+        $_SESSION['parent_relationship'] = $p['relationship'];
+        $_SESSION['parent_occupation']   = $p['occupation'];
+    }
 
     unset($_SESSION['sc_pending']);
     echo json_encode(['success' => true]);
