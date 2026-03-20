@@ -8,7 +8,6 @@ nixPkgs = [
   "php82Extensions.gd",
   "php82Extensions.curl",
   "php82Extensions.zip",
-  "php82Extensions.session",
   "composer"
 ]
 
@@ -17,5 +16,10 @@ cmds = [
   "composer install --no-dev --optimize-autoloader --no-interaction"
 ]
 
+[phases.build]
+cmds = [
+  "php -r \"echo 'mysqli: ' . (function_exists('mysqli_connect') ? 'OK' : 'MISSING') . PHP_EOL;\""
+]
+
 [start]
-cmd = "php -S 0.0.0.0:$PORT -t ."
+cmd = "php82 -d extension=mysqli -d extension=pdo_mysql -S 0.0.0.0:$PORT -t ."
