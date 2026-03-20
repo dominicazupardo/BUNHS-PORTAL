@@ -4,7 +4,6 @@ logs/
 .env
 .env.local
 apcu_setup_check.php
-cache_helper.php
 cache_invalidation_guide.php
 db_migration_student_parent.php
 parent_profile.php
