@@ -1,2 +1,0 @@
-[build]
-nixpacks = ["php82", "php82Extensions.mysqli", "php82Extensions.pdo_mysql", "php82Extensions.mbstring", "php82Extensions.zip", "php82Extensions.gd", "php82Extensions.curl"]
