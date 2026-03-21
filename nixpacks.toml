@@ -1,14 +1,14 @@
 [phases.setup]
 nixPkgs = [
   "php82",
-  "php82Extensions.pdo",
-  "php82Extensions.pdo_mysql",
-  "php82Extensions.mysqli",
-  "php82Extensions.mbstring",
-  "php82Extensions.gd",
-  "php82Extensions.curl",
-  "php82Extensions.zip",
-  "php82Extensions.mysqlnd",
+  "php82Extensions.mysqlnd",      # native driver required for mysqli/pdo_mysql
+  "php82Extensions.mysqli",       # mysqli extension
+  "php82Extensions.pdo",          # PDO core
+  "php82Extensions.pdo_mysql",    # PDO MySQL driver
+  "php82Extensions.mbstring",     # multibyte string functions
+  "php82Extensions.gd",           # image functions
+  "php82Extensions.curl",         # curl functions
+  "php82Extensions.zip",          # zip functions
   "composer"
 ]
 
@@ -17,5 +17,12 @@ cmds = [
   "composer install --no-dev --optimize-autoloader --no-interaction"
 ]
 
+[phases.build]
+cmds = [
+  "php82 -m | grep mysqli",
+  "php82 -m | grep pdo_mysql"
+]
+
 [start]
+# If your files are in root, serve from root
 cmd = "php82 -S 0.0.0.0:$PORT -t ."
