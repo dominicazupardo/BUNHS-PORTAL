@@ -1,15 +1,15 @@
-# Railway Deployment Fix - TODO
+# TODO: Push to New Repo https://github.com/dominicazupardo/BUNHS-PORTAL.git
 
-task_progress Items:
+## Plan Steps (Approved by User)
+1. [x] User authenticates GitHub CLI (`gh auth login`)
+2. [x] Create new branch `blackboxai/new-repo-portal`
+3. [x] Add new remote `new-origin` for BUNHS-PORTAL
+4. [x] Push branch to new remote ✅
+5. [ ] Create PR on new repo via `gh pr create`
+6. [ ] Verify push & complete task
 
-- [x] Step 1: Create .env.example and railway.json ✓
-- [x] Step 2: Update nixpacks.toml ✓
-- [x] Step 3: Update db_connection.php with mysqli check + safe wrapper ✓
-- [x] Step 4: Fix Dockerfile + create start-container.sh ✓
-- [x] Step 5: Add error handling in index.php ✓
-- [ ] Step 6: Local Docker test
-- [ ] Step 7: Railway deploy + verify
+## Current Progress
+- Repo clean, gh v2.83.1 installed
+- Push ongoing, gh auth still pending for PR
 
-## Next: Step 5
-
-index.php error handling wrapper.
+Update after each step.
