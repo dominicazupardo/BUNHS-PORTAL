@@ -1,22 +1,33 @@
 FROM dunglas/frankenphp:php8.4.19-bookworm
 
-# Install system dependencies and PHP extensions
 RUN apt-get update && apt-get install -y \
     libmariadb-dev \
-    && docker-php-ext-install mysqli pdo_mysql mbstring zip gd curl \
+    libzip-dev \
+    libpng-dev \
+    libjpeg-dev \
+    libfreetype6-dev \
+    libonig-dev \
+    unzip \
+    git \
+    curl \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install \
+    mysqli \
+    pdo \
+    pdo_mysql \
+    mbstring \
+    zip \
+    gd \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy application files
-COPY . /app
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Set working directory
 WORKDIR /app
 
-# Install composer dependencies
-RUN composer install --optimize-autoloader --no-scripts --no-interaction
+COPY . /app
 
-# Expose port
+RUN composer install --optimize-autoloader --no-interaction
+
 EXPOSE 8080
 
-# Start FrankenPHP
 CMD ["/start-container.sh"]
