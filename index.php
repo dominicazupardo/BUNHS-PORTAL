@@ -4,6 +4,8 @@ require_once 'session_config.php';
 require_once 'cache_helper.php';
 include 'db_connection.php';
 
+require __DIR__ . '/vendor/autoload.php';
+
 // ─── AUTO-CREATE SUPPORT TABLES ──────────────────────────────────────────────
 $conn->query("CREATE TABLE IF NOT EXISTS school_announcements (
     id INT AUTO_INCREMENT PRIMARY KEY,

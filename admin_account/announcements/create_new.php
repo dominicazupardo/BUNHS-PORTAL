@@ -1,44 +1,103 @@
 <?php
 include '../../db_connection.php';
+session_start();
+
+// Get author name from admin session (matches admin_profile.php logic)
+function get_author_name($conn)
+{
+    $user_id = null;
+    if (isset($_SESSION['user_id'])) $user_id = (int)$_SESSION['user_id'];
+    elseif (isset($_SESSION['admin_id'])) $user_id = (int)$_SESSION['admin_id'];
+
+    if ($user_id) {
+        $stmt = $conn->prepare("SELECT full_name FROM admin WHERE id = ? LIMIT 1");
+        if ($stmt) {
+            $stmt->bind_param("i", $user_id);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            if ($row = $result->fetch_assoc()) {
+                $stmt->close();
+                return !empty($row['full_name']) ? $row['full_name'] : 'Administrator';
+            }
+            $stmt->close();
+        }
+    }
+    // Final fallback
+    return isset($_SESSION['admin_name']) ? $_SESSION['admin_name'] : 'Administrator';
+}
+
+// Auto-generate short_description from content (max 200 chars, end with ellipsis)
+function generate_short_description($content, $max = 200)
+{
+    $plain = strip_tags($content);
+    $plain = preg_replace('/\s+/', ' ', trim($plain));
+    if (mb_strlen($plain) <= $max) return $plain;
+    $cut = mb_substr($plain, 0, $max);
+    $last_space = mb_strrpos($cut, ' ');
+    if ($last_space !== false) $cut = mb_substr($cut, 0, $last_space);
+    return $cut . '...';
+}
 
 // Function to insert news
 function insert_news($conn)
 {
     $title = $_POST['title'];
-    $short_description = $_POST['short_description'];
     $content = $_POST['content'];
     $category = $_POST['category'];
     $news_date = $_POST['news_date'];
-    $author = $_POST['author'];
 
-    // Set defaults
-    if (empty($news_date)) {
-        $news_date = date("Y-m-d");
-    }
-    if (empty($author)) {
-        $author = "Unknown";
-    }
+    if (empty($news_date)) $news_date = date("Y-m-d");
 
-    // Handle image upload
-    $image = '';
-    if (isset($_FILES['image']) && $_FILES['image']['error'] == 0) {
-        $target_dir = "../../assets/img/blog/";
-        $target_file = $target_dir . basename($_FILES["image"]["name"]);
-        $imageFileType = strtolower(pathinfo($target_file, PATHINFO_EXTENSION));
+    // Auto-generate short description from content
+    $short_description = generate_short_description($content);
+
+    // Get author from admin profile session
+    $author = get_author_name($conn);
+
+    // Handle multiple images — store as comma-separated filenames; first image is primary
+    $images = [];
+    $target_dir = "../../assets/img/blog/";
+    $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+    if (isset($_FILES['images']) && is_array($_FILES['images']['name'])) {
+        $file_count = count($_FILES['images']['name']);
+        for ($i = 0; $i < $file_count; $i++) {
+            if ($_FILES['images']['error'][$i] == 0) {
+                if (!in_array($_FILES['images']['type'][$i], $allowed_types)) continue;
+                if ($_FILES['images']['size'][$i] > 5 * 1024 * 1024) continue;
+                $ext = strtolower(pathinfo($_FILES['images']['name'][$i], PATHINFO_EXTENSION));
+                $filename = uniqid('news_', true) . '.' . $ext;
+                $target_file = $target_dir . $filename;
+                if (move_uploaded_file($_FILES['images']['tmp_name'][$i], $target_file)) {
+                    $images[] = $filename;
+                }
+            }
+        }
+    }
+    // Backward-compat: also check single 'image' field
+    if (empty($images) && isset($_FILES['image']) && $_FILES['image']['error'] == 0) {
+        $ext = strtolower(pathinfo($_FILES["image"]["name"], PATHINFO_EXTENSION));
+        $filename = uniqid('news_', true) . '.' . $ext;
+        $target_file = $target_dir . $filename;
         if (move_uploaded_file($_FILES["image"]["tmp_name"], $target_file)) {
-            $image = basename($_FILES["image"]["name"]);
+            $images[] = $filename;
         }
     }
 
-    // Insert into database
-    $stmt = $conn->prepare("INSERT INTO news (title, short_description, content, image, category, news_date, author, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
-    $stmt->bind_param("sssssss", $title, $short_description, $content, $image, $category, $news_date, $author);
+    // Primary image for display (first one), extra images stored in extra_images column if it exists
+    $image = !empty($images) ? $images[0] : '';
+    $extra_images = count($images) > 1 ? implode(',', array_slice($images, 1)) : '';
+
+    // Auto-create extra_images column if it doesn't exist yet
+    $conn->query("ALTER TABLE news ADD COLUMN IF NOT EXISTS extra_images VARCHAR(2000) DEFAULT ''");
+
+    $stmt = $conn->prepare("INSERT INTO news (title, short_description, content, image, extra_images, category, news_date, author, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+    $stmt->bind_param("ssssssss", $title, $short_description, $content, $image, $extra_images, $category, $news_date, $author);
     $success = $stmt->execute();
     $stmt->close();
     return $success;
 }
 
-// Function to delete news
 function delete_news($conn, $id)
 {
     $stmt = $conn->prepare("DELETE FROM news WHERE id = ?");
@@ -48,41 +107,31 @@ function delete_news($conn, $id)
     return $success;
 }
 
-// Handle AJAX requests
 if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
     if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if (isset($_POST['action']) && $_POST['action'] == 'delete' && isset($_POST['id'])) {
             $success = delete_news($conn, $_POST['id']);
             header('Content-Type: application/json');
-            if ($success) {
-                echo json_encode(['status' => 'success', 'message' => 'News post deleted successfully!']);
-            } else {
-                echo json_encode(['status' => 'error', 'message' => 'Error deleting news post.']);
-            }
+            echo json_encode($success
+                ? ['status' => 'success', 'message' => 'News post deleted successfully!']
+                : ['status' => 'error',   'message' => 'Error deleting news post.']);
         } else {
             $success = insert_news($conn);
             header('Content-Type: application/json');
-            if ($success) {
-                echo json_encode(['status' => 'success', 'message' => 'News post created successfully!']);
-            } else {
-                echo json_encode(['status' => 'error', 'message' => 'Error creating news post.']);
-            }
+            echo json_encode($success
+                ? ['status' => 'success', 'message' => 'News post created successfully!']
+                : ['status' => 'error',   'message' => 'Error creating news post.']);
         }
     }
     exit;
 }
 
-// Handle regular POST requests
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $success = insert_news($conn);
-    if ($success) {
-        echo "<script>alert('News post created successfully!'); window.location.reload();</script>";
-    } else {
-        echo "<script>alert('Error creating news post.');</script>";
-    }
+    if ($success) echo "<script>alert('News post created successfully!'); window.location.reload();</script>";
+    else          echo "<script>alert('Error creating news post.');</script>";
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 
@@ -92,17 +141,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <title>Create New Announcement - School Admin Dashboard</title>
     <link rel="stylesheet" href="../admin_assets/cs/admin_style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Fonts -->
     <link href="https://fonts.googleapis.com" rel="preconnect">
     <link href="https://fonts.gstatic.com" rel="preconnect" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Raleway:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet">
-    <!-- Vendor CSS Files -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Poppins:wght@300;400;500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="../../assets/vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
     <link href="../../assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
     <link href="../../assets/vendor/swiper/swiper-bundle.min.css" rel="stylesheet">
     <link href="../../assets/vendor/glightbox/css/glightbox.min.css" rel="stylesheet">
-
-    <!-- Main CSS File -->
     <link href="../../assets/css/main.css" rel="stylesheet">
 </head>
 
@@ -110,9 +155,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <div id="navigation-container"></div>
 
     <script>
-        // Load navigation
         fetch('../admin_nav.php')
-            .then(response => response.text())
+            .then(r => r.text())
             .then(data => {
                 document.getElementById('navigation-container').innerHTML = data;
                 const mainDiv = document.querySelector('.main');
@@ -121,41 +165,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 fixAllNavLinks();
                 initDropdowns();
             })
-            .catch(error => console.error('Error loading navigation:', error));
+            .catch(e => console.error('Error loading navigation:', e));
 
-        /**
-         * Resolve the admin_account base URL from the current page's URL.
-         * Works regardless of how deeply nested the current page is.
-         */
         function getAdminBase() {
             const parts = window.location.pathname.split('/');
             const idx = parts.indexOf('admin_account');
-            if (idx !== -1) {
-                return parts.slice(0, idx + 1).join('/') + '/';
-            }
+            if (idx !== -1) return parts.slice(0, idx + 1).join('/') + '/';
             return window.location.pathname.split('/').slice(0, -1).join('/') + '/';
         }
 
         function fixAllNavLinks() {
             const adminBase = getAdminBase();
-
-            document.querySelectorAll(
-                '.sidebar a[href], .topbar a[href], .user-menu a[href]'
-            ).forEach(link => {
+            document.querySelectorAll('.sidebar a[href], .topbar a[href], .user-menu a[href]').forEach(link => {
                 const href = link.getAttribute('href');
-                if (!href || href.startsWith('#') || href.startsWith('javascript:') ||
-                    href.startsWith('http') || href.startsWith('/')) return;
-
-                if (href.startsWith('admin_account/')) {
-                    link.setAttribute('href', adminBase + href.replace('admin_account/', ''));
-                } else if (!href.startsWith('../') && !href.startsWith('./')) {
-                    link.setAttribute('href', adminBase + href);
-                }
+                if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('http') || href.startsWith('/')) return;
+                if (href.startsWith('admin_account/')) link.setAttribute('href', adminBase + href.replace('admin_account/', ''));
+                else if (!href.startsWith('../') && !href.startsWith('./')) link.setAttribute('href', adminBase + href);
             });
-
             document.querySelectorAll('.dropdown-item[data-page]').forEach(item => {
-                const page = item.getAttribute('data-page');
-                item.setAttribute('href', adminBase + 'announcements/' + page);
+                item.setAttribute('href', getAdminBase() + 'announcements/' + item.getAttribute('data-page'));
             });
         }
 
@@ -172,16 +200,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     if (!isActive) dropdown.classList.add('active');
                 });
             });
-
-            document.addEventListener('click', function(e) {
-                if (!e.target.closest('.dropdown')) {
-                    document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('active'));
-                }
+            document.addEventListener('click', e => {
+                if (!e.target.closest('.dropdown')) document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('active'));
             });
         }
     </script>
 
-    <!-- main content -->
+    <!-- Toast Container -->
+    <div id="toastContainer" aria-live="polite" aria-atomic="true"></div>
+
     <main class="main page-content">
 
         <!-- Page Title -->
@@ -190,10 +217,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <div class="container">
                     <div class="row d-flex justify-content-center text-center">
                         <div class="col-lg-8">
-                            <h1 class="heading-title">Create News</h1>
-                            <p class="mb-0">
-                                Fill in the details below to upload a news announcement.
-                            </p>
+                            <h1 class="heading-title">News Announcements</h1>
+                            <p class="mb-0">Manage and publish school news announcements.</p>
                         </div>
                     </div>
                 </div>
@@ -206,144 +231,376 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     </ol>
                 </div>
             </nav>
-        </div><!-- End Page Title -->
+        </div>
 
-        <!-- Create Announcement Button -->
-        <section class="create-announcement section">
-            <div class="container-fluid">
-                <div class="row justify-content-center">
-                    <div class="col-lg-10">
-                        <div class="text-center">
-                            <button type="button" class="btn btn-primary btn-sm px-2 py-1 rounded-pill" data-bs-toggle="modal" data-bs-target="#createNewsModal">
-                                <i class="fas fa-plus me-2"></i>Create New
+        <!-- Floating Create Button -->
+        <div class="fab-container">
+            <button class="fab-btn" data-bs-toggle="modal" data-bs-target="#createNewsModal" title="Create New Announcement">
+                <i class="fas fa-plus fab-icon"></i>
+                <span class="fab-label">New Post</span>
+            </button>
+        </div>
+
+        <!-- ============================================================
+             CREATE NEWS MODAL
+        ============================================================ -->
+        <div class="modal fade" id="createNewsModal" tabindex="-1" aria-labelledby="createNewsModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                <div class="modal-content">
+
+                    <div class="modal-header">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="modal-icon-wrap">
+                                <i class="fas fa-newspaper"></i>
+                            </div>
+                            <div>
+                                <h5 class="modal-title mb-0" id="createNewsModalLabel">Create New Announcement</h5>
+                                <p class="modal-subtitle mb-0">Fill in the details or use AI to generate content</p>
+                            </div>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+
+                    <!-- Draft Restore Banner -->
+                    <div id="draftRestoreBanner" class="draft-restore-banner" style="display:none;">
+                        <i class="fas fa-history me-2"></i>
+                        <span>You have an unsaved draft. <strong>Restore it?</strong></span>
+                        <div class="ms-auto d-flex gap-2">
+                            <button class="btn-restore" onclick="restoreDraft()">Restore</button>
+                            <button class="btn-discard" onclick="discardDraft()">Discard</button>
+                        </div>
+                    </div>
+
+                    <div class="modal-body p-0">
+
+                        <!-- ── AI ASSISTANT PANEL ── -->
+                        <div id="aiPanel" class="ai-panel">
+                            <div class="ai-panel-header" id="aiToggleBtn" onclick="toggleAIPanel()">
+                                <div class="ai-panel-title">
+                                    <span class="ai-sparkle">✨</span>
+                                    <span>AI Writing Assistant</span>
+                                    <span class="ai-badge">Powered by Claude</span>
+                                </div>
+                                <div class="ai-panel-subtitle" id="aiPanelSubtitle">
+                                    Describe your news in plain language — Claude will write all fields for you
+                                </div>
+                                <i class="fas fa-chevron-up ai-chevron" id="aiChevron"></i>
+                            </div>
+
+                            <div class="ai-panel-body" id="aiPanelBody">
+                                <!-- Brief input -->
+                                <div class="ai-brief-area">
+                                    <label class="ai-label">
+                                        <i class="fas fa-pen-nib me-1"></i>What's the news about?
+                                    </label>
+                                    <textarea id="aiBrief"
+                                        placeholder="e.g. 'Suspension of classes tomorrow due to Typhoon Ompong. All students should stay home.' — the more detail, the better."
+                                        rows="3"></textarea>
+                                    <div class="ai-quick-prompts">
+                                        <span class="ai-qs-label">Quick start:</span>
+                                        <button class="ai-qs-btn" onclick="setPrompt('Suspension of classes tomorrow due to typhoon signal 3 in Albay')">🌀 Class suspension</button>
+                                        <button class="ai-qs-btn" onclick="setPrompt('Recognition ceremony for top students and honor roll for this quarter')">🏆 Recognition</button>
+                                        <button class="ai-qs-btn" onclick="setPrompt('Enrollment schedule announcement for incoming Grade 7 students')">📋 Enrollment</button>
+                                        <button class="ai-qs-btn" onclick="setPrompt('School health advisory for flu season — encourage hygiene and vaccination')">🏥 Health notice</button>
+                                        <button class="ai-qs-btn" onclick="setPrompt('Upcoming BUNHS intramurals sports event next week, all students required to participate')">⚽ Intramurals</button>
+                                        <button class="ai-qs-btn" onclick="setPrompt('PTA general assembly meeting this Saturday at 9am in the school gymnasium')">👨‍👩‍👧 PTA meeting</button>
+                                    </div>
+                                </div>
+
+                                <!-- Options row -->
+                                <div class="ai-options-row">
+                                    <div class="ai-option-group">
+                                        <label class="ai-label"><i class="fas fa-tags me-1"></i>Category</label>
+                                        <select id="aiCategory">
+                                            <option value="">Auto-detect</option>
+                                            <option>Education</option>
+                                            <option>Politics</option>
+                                            <option>Travel &amp; Tourism</option>
+                                            <option>Technology</option>
+                                            <option>Community Updates</option>
+                                            <option>Emergency Notices</option>
+                                            <option>Health &amp; Safety</option>
+                                            <option>Public Service Information</option>
+                                        </select>
+                                    </div>
+                                    <div class="ai-option-group">
+                                        <label class="ai-label"><i class="fas fa-sliders-h me-1"></i>Tone</label>
+                                        <div class="ai-tone-group">
+                                            <label class="ai-tone-btn">
+                                                <input type="radio" name="aiTone" value="formal" checked>
+                                                <span>📰 Formal</span>
+                                            </label>
+                                            <label class="ai-tone-btn">
+                                                <input type="radio" name="aiTone" value="friendly">
+                                                <span>😊 Friendly</span>
+                                            </label>
+                                            <label class="ai-tone-btn">
+                                                <input type="radio" name="aiTone" value="urgent">
+                                                <span>🚨 Urgent</span>
+                                            </label>
+                                            <label class="ai-tone-btn">
+                                                <input type="radio" name="aiTone" value="bilingual">
+                                                <span>🇵🇭 Bilingual</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Generate button + status -->
+                                <div class="ai-generate-row">
+                                    <button class="ai-generate-btn" id="aiGenerateBtn" onclick="generateWithAI()">
+                                        <i class="fas fa-magic me-2"></i>Generate Article
+                                    </button>
+                                    <div class="ai-status" id="aiStatus"></div>
+                                </div>
+
+                                <!-- AI Result preview -->
+                                <div id="aiResult" class="ai-result" style="display:none;">
+                                    <div class="ai-result-header">
+                                        <span><i class="fas fa-check-circle me-1" style="color:#4A5D23"></i>Article generated — review below, then click <strong>Fill Form ↓</strong></span>
+                                        <button class="ai-fill-btn" onclick="fillFormFromAI()">
+                                            <i class="fas fa-arrow-down me-1"></i>Fill Form Fields
+                                        </button>
+                                    </div>
+
+                                    <div class="ai-field-preview" id="pTitle">
+                                        <div class="ai-fp-label">
+                                            <i class="fas fa-heading me-1"></i>Title
+                                            <button class="ai-refine-pill" onclick="openRefine('title')">✏️ Refine</button>
+                                        </div>
+                                        <div class="ai-fp-value" id="prevTitle"></div>
+                                        <div class="ai-refine-box" id="refineBox_title" style="display:none;">
+                                            <input type="text" id="refineInput_title" placeholder="e.g. make it shorter, add urgency…" />
+                                            <button onclick="refineField('title')">Apply</button>
+                                            <div class="ai-refine-chips">
+                                                <span onclick="quickRefine('title','Make it shorter')">Shorter</span>
+                                                <span onclick="quickRefine('title','Add urgency')">More urgent</span>
+                                                <span onclick="quickRefine('title','Translate to Filipino')">Filipino</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="ai-field-preview" id="pContent">
+                                        <div class="ai-fp-label">
+                                            <i class="fas fa-file-alt me-1"></i>Full Content
+                                            <button class="ai-refine-pill" onclick="openRefine('content')">✏️ Refine</button>
+                                        </div>
+                                        <div class="ai-fp-value ai-fp-content" id="prevContent"></div>
+                                        <div class="ai-refine-box" id="refineBox_content" style="display:none;">
+                                            <input type="text" id="refineInput_content" placeholder="e.g. add a closing paragraph, include safety reminders…" />
+                                            <button onclick="refineField('content')">Apply</button>
+                                            <div class="ai-refine-chips">
+                                                <span onclick="quickRefine('content','Add safety reminders')">Safety tips</span>
+                                                <span onclick="quickRefine('content','Make it more detailed')">More detail</span>
+                                                <span onclick="quickRefine('content','Translate to Filipino')">Filipino</span>
+                                                <span onclick="quickRefine('content','Add a strong closing paragraph')">Add closing</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="ai-field-row">
+                                        <div class="ai-field-preview" id="pCategory">
+                                            <div class="ai-fp-label"><i class="fas fa-tag me-1"></i>Category</div>
+                                            <div class="ai-fp-value" id="prevCategory"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="ai-result-footer">
+                                        <button class="ai-regen-btn" onclick="generateWithAI()">
+                                            <i class="fas fa-redo me-1"></i>Regenerate
+                                        </button>
+                                        <button class="ai-fill-btn ai-fill-btn-lg" onclick="fillFormFromAI()">
+                                            <i class="fas fa-arrow-down me-2"></i>Fill Form Fields
+                                        </button>
+                                    </div>
+                                </div>
+
+                            </div><!-- /ai-panel-body -->
+                        </div><!-- /ai-panel -->
+
+                        <!-- ── FORM ── -->
+                        <div class="form-wrapper px-4 pt-3 pb-2">
+
+                            <!-- AI Fill Success Banner -->
+                            <div id="aiFillSuccess" class="ai-fill-success" style="display:none;">
+                                <i class="fas fa-check-circle me-2"></i>
+                                All fields filled by AI — review, upload your image, then click <strong>Publish Announcement</strong>.
+                                <button onclick="document.getElementById('aiFillSuccess').style.display='none'" class="btn-close btn-close-sm ms-auto"></button>
+                            </div>
+
+                            <!-- Form Progress Bar -->
+                            <div class="form-progress-wrap mb-3">
+                                <div class="form-progress-label">
+                                    <span id="progressText">Form Completion</span>
+                                    <span id="progressPct" class="progress-pct">0%</span>
+                                </div>
+                                <div class="form-progress-bar-track">
+                                    <div class="form-progress-bar-fill" id="progressBarFill" style="width:0%"></div>
+                                </div>
+                            </div>
+
+                            <form action="" method="POST" enctype="multipart/form-data" id="newsForm" novalidate>
+
+                                <!-- Row 1: Title -->
+                                <div class="form-group-card mb-3">
+                                    <label for="title" class="form-label required-label">
+                                        <i class="fas fa-heading me-2 label-icon"></i>News Title
+                                    </label>
+                                    <input type="text" class="form-control" id="title" name="title"
+                                        placeholder="Enter the news title here…" required>
+                                    <div class="invalid-feedback" id="titleError">Title is required.</div>
+                                </div>
+
+                                <!-- Row 2: Full Content -->
+                                <div class="form-group-card mb-3">
+                                    <label for="content" class="form-label required-label">
+                                        <i class="fas fa-file-alt me-2 label-icon"></i>Full Article Content
+                                    </label>
+                                    <textarea class="form-control content-textarea" id="content" name="content"
+                                        placeholder="Write the complete announcement here…" rows="8"></textarea>
+                                    <div class="field-meta d-flex justify-content-between mt-1">
+                                        <span class="field-hint" id="contentHint"></span>
+                                    </div>
+                                    <div class="invalid-feedback" id="contentError">Content is required.</div>
+                                </div>
+
+                                <!-- Row 4: Category + Date -->
+                                <div class="row g-3 mb-3">
+                                    <div class="col-md-6">
+                                        <div class="form-group-card">
+                                            <label for="category" class="form-label required-label">
+                                                <i class="fas fa-tag me-2 label-icon"></i>Category
+                                            </label>
+                                            <select class="form-select" id="category" name="category">
+                                                <option value="">Choose a category…</option>
+                                                <option>Education</option>
+                                                <option>Politics</option>
+                                                <option>Travel &amp; Tourism</option>
+                                                <option>Technology</option>
+                                                <option>Community Updates</option>
+                                                <option>Emergency Notices</option>
+                                                <option>Health &amp; Safety</option>
+                                                <option>Public Service Information</option>
+                                            </select>
+                                            <div class="invalid-feedback" id="categoryError">Please select a category.</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-group-card">
+                                            <label for="news_date" class="form-label">
+                                                <i class="fas fa-calendar me-2 label-icon"></i>Publication Date
+                                            </label>
+                                            <input type="date" class="form-control" id="news_date" name="news_date">
+                                            <div class="field-meta mt-1">
+                                                <span class="field-hint">Leave blank to use today's date</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Row 5: Images Upload (multiple) -->
+                                <div class="form-group-card mb-3">
+                                    <label class="form-label">
+                                        <i class="fas fa-images me-2 label-icon"></i>Photos
+                                        <span class="badge bg-secondary ms-1" style="font-size:10px;font-weight:500;">Optional · Multiple allowed</span>
+                                    </label>
+                                    <div class="multi-image-upload-zone" id="imageUploadZone">
+                                        <div class="image-upload-placeholder" id="imagePlaceholder">
+                                            <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                                            <p class="upload-text">Drag &amp; drop photos here, or <label for="images" class="upload-link">browse files</label></p>
+                                            <p class="upload-sub">JPEG, PNG, GIF, WebP · Max 5 MB each · First photo is the featured image</p>
+                                        </div>
+                                        <div class="multi-image-previews" id="multiImagePreviews" style="display:none;">
+                                            <div class="preview-grid" id="previewGrid"></div>
+                                            <label for="images" class="add-more-photos-btn">
+                                                <i class="fas fa-plus me-1"></i>Add More Photos
+                                            </label>
+                                        </div>
+                                        <input type="file" class="d-none" id="images" name="images[]" accept="image/*" multiple>
+                                    </div>
+                                    <div class="invalid-feedback d-block" id="imageError" style="display:none!important;"></div>
+                                </div>
+
+                            </form>
+                        </div><!-- /form-wrapper -->
+
+                    </div><!-- /modal-body -->
+
+                    <div class="modal-footer justify-content-between">
+                        <div class="footer-left d-flex align-items-center gap-2">
+                            <span class="draft-indicator" id="draftIndicator" style="display:none;">
+                                <i class="fas fa-circle-notch fa-spin me-1 text-muted" style="font-size:11px;"></i>
+                                <span class="text-muted" style="font-size:12px;">Saving draft…</span>
+                            </span>
+                            <span class="draft-saved" id="draftSaved" style="display:none;">
+                                <i class="fas fa-check-circle me-1" style="color:#4A5D23;font-size:11px;"></i>
+                                <span style="font-size:12px;color:#4A5D23;">Draft saved</span>
+                            </span>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                                <i class="fas fa-times me-1"></i>Cancel
+                            </button>
+                            <button type="submit" form="newsForm" class="btn btn-publish" id="submitBtn">
+                                <i class="fas fa-paper-plane me-2"></i>Publish Announcement
                             </button>
                         </div>
                     </div>
-                </div>
+
+                </div><!-- /modal-content -->
             </div>
-        </section><!-- End Create Announcement Button -->
+        </div>
 
-        <!-- Create News Modal -->
-        <div class="modal fade" id="createNewsModal" tabindex="-1" aria-labelledby="createNewsModalLabel" aria-hidden="true">
-            <div class="modal-dialog modal-xl">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title" id="createNewsModalLabel">Create New</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <!-- ============================================================
+             DELETE CONFIRMATION MODAL (replaces native confirm())
+        ============================================================ -->
+        <div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered modal-sm">
+                <div class="modal-content delete-modal-content">
+                    <div class="delete-modal-icon">
+                        <i class="fas fa-trash-alt"></i>
                     </div>
-                    <div class="modal-body">
-                        <form action="" method="POST" enctype="multipart/form-data" id="newsForm">
-                            <div class="row g-3">
-                                <!-- News Title -->
-                                <div class="col-12">
-                                    <label for="title" class="form-label fw-semibold">News Title *</label>
-                                    <input type="text" class="form-control" id="title" name="title" placeholder="Enter news title" required>
-                                    <div class="form-text d-flex justify-content-between">
-                                        <span>Enter a compelling title for your news announcement</span>
-                                        <span class="char-count" id="titleCount">0/20</span>
-                                    </div>
-                                </div>
-
-                                <!-- Short Description -->
-                                <div class="col-12">
-                                    <label for="short_description" class="form-label fw-semibold">Short Description *</label>
-                                    <textarea class="form-control" id="short_description" name="short_description" placeholder="Brief summary of the news" rows="3" required></textarea>
-                                    <div class="form-text d-flex justify-content-between">
-                                        <span>Provide a concise summary that will appear in previews</span>
-                                        <span class="char-count" id="descCount">0/50</span>
-                                    </div>
-                                </div>
-
-                                <!-- Full News Content -->
-                                <div class="col-12">
-                                    <label for="content" class="form-label fw-semibold">Full News Content *</label>
-                                    <textarea class="form-control" id="content" name="content" placeholder="Write the full news content here" rows="8" required></textarea>
-                                    <div class="form-text d-flex justify-content-between">
-                                        <span>Write the complete news article content</span>
-                                        <span class="char-count" id="contentCount">0 characters (min 50)</span>
-                                    </div>
-                                </div>
-
-                                <!-- News Category -->
-                                <div class="col-md-6">
-                                    <label for="category" class="form-label fw-semibold">News Category *</label>
-                                    <select class="form-select" id="category" name="category" required>
-                                        <option value="">Choose a category</option>
-                                        <option value="Education">Education</option>
-                                        <option value="Politics">Politics</option>
-                                        <option value="Travel & Tourism">Travel & Tourism</option>
-                                        <option value="Technology">Technology</option>
-                                        <option value="Community Updates">Community Updates</option>
-                                        <option value="Emergency Notices">Emergency Notices</option>
-                                        <option value="Health & Safety">Health & Safety</option>
-                                        <option value="Public Service Information">Public Service Information</option>
-                                    </select>
-                                </div>
-
-                                <!-- News Date -->
-                                <div class="col-md-6">
-                                    <label for="news_date" class="form-label fw-semibold">Publication Date</label>
-                                    <input type="date" class="form-control" id="news_date" name="news_date">
-                                    <div class="form-text">Leave blank for today's date</div>
-                                </div>
-
-                                <!-- Author -->
-                                <div class="col-12">
-                                    <label for="author" class="form-label fw-semibold">Author Name</label>
-                                    <input type="text" class="form-control" id="author" name="author" placeholder="Enter author name">
-                                    <div class="form-text">Optional: Enter the author's name</div>
-                                </div>
-
-                                <!-- Image Upload -->
-                                <div class="col-12">
-                                    <label for="image" class="form-label fw-semibold">Featured Image</label>
-                                    <input type="file" class="form-control" id="image" name="image" accept="image/*">
-                                    <div class="form-text">Supported formats: JPEG, PNG, GIF, WebP. Max size: 5MB</div>
-                                </div>
-                            </div>
-                        </form>
+                    <div class="delete-modal-body">
+                        <h6>Delete this post?</h6>
+                        <p id="deleteModalTitle" class="text-muted"></p>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" form="newsForm" class="btn btn-primary" id="submitBtn">
-                            <i class="fas fa-save me-2"></i>Create Announcement
+                    <div class="delete-modal-footer">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-sm btn-danger" id="confirmDeleteBtn">
+                            <i class="fas fa-trash me-1"></i>Delete
                         </button>
                     </div>
                 </div>
             </div>
-        </div><!-- End Create News Modal -->
+        </div>
 
-        <!-- Confirmation Modal -->
+        <!-- Confirmation Modal (submit) -->
         <div class="modal fade" id="confirmationModal" tabindex="-1" aria-labelledby="confirmationModalLabel" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title" id="confirmationModalLabel">Confirm Announcement Creation</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <div class="modal-header border-0 pb-0">
+                        <h5 class="modal-title"><i class="fas fa-check-circle text-success me-2"></i>Ready to Publish?</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
-                    <div class="modal-body">
-                        <p>Are you sure you want to create this announcement?</p>
+                    <div class="modal-body pt-2">
+                        <p class="text-muted mb-0">Your announcement will be published immediately and visible to all users. Review your content once more before confirming.</p>
+                        <div class="confirm-summary mt-3" id="confirmSummary"></div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No</button>
-                        <button type="button" class="btn btn-primary" id="confirmYes">Yes</button>
+                    <div class="modal-footer border-0">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Go Back</button>
+                        <button type="button" class="btn btn-publish btn-sm" id="confirmYes">
+                            <i class="fas fa-paper-plane me-1"></i>Yes, Publish
+                        </button>
                     </div>
                 </div>
             </div>
-        </div><!-- End Confirmation Modal -->
+        </div>
 
         <!-- News Hero Section -->
         <section id="news-hero" class="news-hero section">
-
             <div class="container">
-
                 <div class="row g-4">
-                    <!-- Main Content Area -->
-                    <div class="col-lg-8">
-                        <?php include 'hero_dynamic.php'; ?>
-                    </div><!-- End Main Content Area -->
-
-                    <!-- Sidebar with Tabs -->
+                    <div class="col-lg-8"><?php include 'hero_dynamic.php'; ?></div>
                     <div class="col-lg-4">
                         <div class="news-tabs">
                             <ul class="nav nav-tabs" role="tablist">
@@ -351,45 +608,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                     <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#top-stories" type="button">Latest News</button>
                                 </li>
                                 <li class="nav-item" role="presentation">
-                                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#trending" type="button">Top stories</button>
+                                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#trending" type="button">Top Stories</button>
                                 </li>
                             </ul>
-
-                            <div class="tab-content">
-                                <?php include 'sidebar_dynamic.php'; ?>
-                            </div>
+                            <div class="tab-content"><?php include 'sidebar_dynamic.php'; ?></div>
                         </div>
                     </div>
                 </div>
             </div>
-        </section><!-- /News Hero Section -->
+        </section>
 
         <!-- News Posts Section -->
         <section id="news-posts" class="news-posts section">
-
             <div class="container">
-
-                <div class="row gy-5">
-                    <?php include 'news_posts_dynamic.php'; ?>
-                </div>
-
+                <div class="row gy-5"><?php include 'news_posts_dynamic.php'; ?></div>
             </div>
+        </section>
 
-        </section><!-- /News Posts Section -->
-
-        <!-- Pagination 2 Section -->
+        <!-- Pagination -->
         <section id="pagination-2" class="pagination-2 section">
-
             <div class="container">
                 <nav class="d-flex justify-content-center" aria-label="Page navigation">
                     <ul>
-                        <li>
-                            <a href="#" aria-label="Previous page">
-                                <i class="fa-solid fa-circle-chevron-left"></i>
-                                <span class="d-none d-sm-inline">Previous</span>
-                            </a>
-                        </li>
-
+                        <li><a href="#" aria-label="Previous page"><i class="fa-solid fa-circle-chevron-left"></i><span class="d-none d-sm-inline">Previous</span></a></li>
                         <li><a href="#" class="active">1</a></li>
                         <li><a href="#">2</a></li>
                         <li><a href="#">3</a></li>
@@ -397,149 +638,558 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         <li><a href="#">8</a></li>
                         <li><a href="#">9</a></li>
                         <li><a href="#">10</a></li>
-
-                        <li>
-                            <a href="#" aria-label="Next page">
-                                <span class="d-none d-sm-inline">Next</span>
-                                <i class="fa-solid fa-circle-chevron-right"></i>
-                            </a>
-                        </li>
+                        <li><a href="#" aria-label="Next page"><span class="d-none d-sm-inline">Next</span><i class="fa-solid fa-circle-chevron-right"></i></a></li>
                     </ul>
                 </nav>
             </div>
-
-        </section><!-- /Pagination 2 Section -->
-
-
+        </section>
 
     </main>
 
-    <!-- Vendor JS Files -->
+    <!-- Vendor JS -->
     <script src="../../assets/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/vendor/swiper/swiper-bundle.min.js"></script>
     <script src="../../assets/vendor/glightbox/js/glightbox.min.js"></script>
-    <!-- Main JS File -->
     <script src="../../assets/js/main.js"></script>
-
     <script src="../admin_assets/js/admin_script.js"></script>
 
     <script>
-        // Function to update content character count
+        // ============================================================
+        // TOAST NOTIFICATIONS  (replaces all alert() calls)
+        // ============================================================
+        function showToast(message, type = 'success', duration = 4000) {
+            const icons = {
+                success: 'check-circle',
+                error: 'times-circle',
+                warning: 'exclamation-triangle',
+                info: 'info-circle'
+            };
+            const colors = {
+                success: '#4A5D23',
+                error: '#dc3545',
+                warning: '#f59e0b',
+                info: '#3b82f6'
+            };
+            const id = 'toast-' + Date.now();
+            const html = `
+            <div id="${id}" class="custom-toast custom-toast-${type}" role="alert" aria-live="assertive">
+                <i class="fas fa-${icons[type] || 'info-circle'} toast-icon" style="color:${colors[type]}"></i>
+                <span class="toast-msg">${message}</span>
+                <button class="toast-close" onclick="dismissToast('${id}')"><i class="fas fa-times"></i></button>
+                <div class="toast-progress" style="animation-duration:${duration}ms;background:${colors[type]}"></div>
+            </div>`;
+            document.getElementById('toastContainer').insertAdjacentHTML('beforeend', html);
+            const el = document.getElementById(id);
+            // trigger enter animation
+            requestAnimationFrame(() => el.classList.add('toast-visible'));
+            setTimeout(() => dismissToast(id), duration);
+        }
+
+        function dismissToast(id) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.remove('toast-visible');
+            el.classList.add('toast-exit');
+            setTimeout(() => el.remove(), 350);
+        }
+
+        // ============================================================
+        // CHARACTER / WORD COUNTERS  +  PROGRESS BAR
+        // ============================================================
+        const FIELDS = {
+            title: {
+                min: 1,
+                max: 100
+            },
+            content: {
+                min: 1,
+                max: Infinity
+            },
+            category: {
+                min: 1,
+                max: Infinity
+            }
+        };
+
+        function wordCount(str) {
+            return str.trim() ? str.trim().split(/\s+/).length : 0;
+        }
+
+        function updateTitleCount() {
+            const el = document.getElementById('title');
+            const countEl = document.getElementById('titleCount');
+            if (!el || !countEl) return;
+            const len = el.value.length;
+            countEl.textContent = len + ' / 100';
+            validateField(el, len >= FIELDS.title.min && len <= FIELDS.title.max, 'titleError', 'titleHint');
+            updateProgress();
+            scheduleDraftSave();
+        }
+
         function updateContentCount() {
-            const contentInput = document.getElementById('content');
-            const contentCount = document.getElementById('contentCount');
-            const length = contentInput.value.length;
-            contentCount.textContent = length + ' characters (min 50)';
-            if (length < 50) {
-                contentInput.classList.add('is-invalid');
-                contentInput.classList.remove('is-valid');
+            const el = document.getElementById('content');
+            const countEl = document.getElementById('contentCount');
+            const wEl = document.getElementById('wordCount');
+            if (!el || !countEl || !wEl) return;
+            const len = el.value.length;
+            const words = wordCount(el.value);
+            countEl.textContent = len + ' chars';
+            wEl.textContent = words + ' word' + (words !== 1 ? 's' : '');
+            validateField(el, len >= FIELDS.content.min, 'contentError', 'contentHint');
+            updateProgress();
+            scheduleDraftSave();
+        }
+
+        function validateField(el, valid, errorId, hintId) {
+            if (!el) return;
+            if (el.value.length === 0) {
+                el.classList.remove('is-valid', 'is-invalid');
+                const errEl = document.getElementById(errorId);
+                if (errEl) errEl.style.display = 'none';
+                return;
+            }
+            el.classList.toggle('is-invalid', !valid);
+            el.classList.toggle('is-valid', valid);
+            const errEl = document.getElementById(errorId);
+            if (errEl) errEl.style.display = valid ? 'none' : 'block';
+        }
+
+        function updateProgress() {
+            const titleEl = document.getElementById('title');
+            const contentEl = document.getElementById('content');
+            const categoryEl = document.getElementById('category');
+            if (!titleEl || !contentEl || !categoryEl) return;
+            const fields = [
+                titleEl.value.length >= FIELDS.title.min,
+                contentEl.value.length >= FIELDS.content.min,
+                !!categoryEl.value,
+            ];
+            const pct = Math.round((fields.filter(Boolean).length / fields.length) * 100);
+            const fillEl = document.getElementById('progressBarFill');
+            const pctEl = document.getElementById('progressPct');
+            const txtEl = document.getElementById('progressText');
+            if (fillEl) fillEl.style.width = pct + '%';
+            if (pctEl) pctEl.textContent = pct + '%';
+            if (pct === 100) {
+                if (txtEl) txtEl.textContent = '✓ All required fields complete';
+                if (pctEl) pctEl.style.color = '#4A5D23';
             } else {
-                contentInput.classList.remove('is-invalid');
-                contentInput.classList.add('is-valid');
+                if (txtEl) txtEl.textContent = 'Form Completion';
+                if (pctEl) pctEl.style.color = '';
             }
         }
 
-        // Character count functions
-        function updateTitleCount() {
-            const titleInput = document.getElementById('title');
-            const titleCount = document.getElementById('titleCount');
-            const length = titleInput.value.length;
-            titleCount.textContent = length + '/100';
+        // ============================================================
+        // AUTO-SAVE DRAFT  (localStorage)
+        // ============================================================
+        let draftTimer = null;
+
+        function scheduleDraftSave() {
+            clearTimeout(draftTimer);
+            document.getElementById('draftIndicator').style.display = 'flex';
+            document.getElementById('draftSaved').style.display = 'none';
+            draftTimer = setTimeout(saveDraft, 1200);
         }
 
-        function updateDescCount() {
-            const shortDescInput = document.getElementById('short_description');
-            const descCount = document.getElementById('descCount');
-            const length = shortDescInput.value.length;
-            descCount.textContent = length + '/200';
+        function saveDraft() {
+            const draft = {
+                title: document.getElementById('title').value,
+                content: document.getElementById('content').value,
+                category: document.getElementById('category').value,
+                news_date: document.getElementById('news_date').value,
+                savedAt: new Date().toISOString()
+            };
+            localStorage.setItem('news_draft', JSON.stringify(draft));
+            document.getElementById('draftIndicator').style.display = 'none';
+            document.getElementById('draftSaved').style.display = 'flex';
         }
 
-        // Form validation and submission handling
+        function checkForDraft() {
+            const raw = localStorage.getItem('news_draft');
+            if (!raw) return;
+            try {
+                const draft = JSON.parse(raw);
+                const hasContent = draft.title || draft.content;
+                if (hasContent) {
+                    document.getElementById('draftRestoreBanner').style.display = 'flex';
+                }
+            } catch (e) {}
+        }
+
+        function restoreDraft() {
+            const draft = JSON.parse(localStorage.getItem('news_draft') || '{}');
+            if (draft.title) document.getElementById('title').value = draft.title;
+            if (draft.content) document.getElementById('content').value = draft.content;
+            if (draft.category) document.getElementById('category').value = draft.category;
+            if (draft.news_date) document.getElementById('news_date').value = draft.news_date;
+            updateTitleCount();
+            updateContentCount();
+            document.getElementById('draftRestoreBanner').style.display = 'none';
+            showToast('Draft restored successfully!', 'info');
+        }
+
+        function discardDraft() {
+            localStorage.removeItem('news_draft');
+            document.getElementById('draftRestoreBanner').style.display = 'none';
+        }
+
+        // ============================================================
+        // MULTI-IMAGE UPLOAD  — drag & drop + sortable previews
+        // ============================================================
+        let uploadedFiles = []; // DataTransfer-backed file list
+
+        function initImageUpload() {
+            const zone = document.getElementById('imageUploadZone');
+            const input = document.getElementById('images');
+
+            zone.addEventListener('dragover', e => {
+                e.preventDefault();
+                zone.classList.add('drag-over');
+            });
+            zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+            zone.addEventListener('drop', e => {
+                e.preventDefault();
+                zone.classList.remove('drag-over');
+                handleImageFiles(Array.from(e.dataTransfer.files));
+            });
+            zone.addEventListener('click', e => {
+                if (e.target.closest('.preview-thumb') || e.target.closest('.add-more-photos-btn')) return;
+                if (uploadedFiles.length === 0) input.click();
+            });
+            input.addEventListener('change', () => {
+                if (input.files.length) handleImageFiles(Array.from(input.files));
+                input.value = ''; // reset so same file can be re-added
+            });
+        }
+
+        function handleImageFiles(files) {
+            const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+            let skipped = 0;
+            files.forEach(file => {
+                if (!allowed.includes(file.type)) {
+                    skipped++;
+                    return;
+                }
+                if (file.size > 5 * 1024 * 1024) {
+                    showToast(`"${file.name}" exceeds 5 MB and was skipped.`, 'warning');
+                    return;
+                }
+                uploadedFiles.push(file);
+            });
+            if (skipped) showToast(`${skipped} file(s) skipped — use JPEG, PNG, GIF, or WebP.`, 'warning');
+            syncFilesToInput();
+            renderPreviews();
+        }
+
+        function syncFilesToInput() {
+            const input = document.getElementById('images');
+            const dt = new DataTransfer();
+            uploadedFiles.forEach(f => dt.items.add(f));
+            input.files = dt.files;
+        }
+
+        function removeUploadedImage(idx) {
+            uploadedFiles.splice(idx, 1);
+            syncFilesToInput();
+            renderPreviews();
+        }
+
+        function renderPreviews() {
+            const placeholder = document.getElementById('imagePlaceholder');
+            const previewsWrap = document.getElementById('multiImagePreviews');
+            const grid = document.getElementById('previewGrid');
+
+            if (uploadedFiles.length === 0) {
+                placeholder.style.display = 'flex';
+                previewsWrap.style.display = 'none';
+                grid.innerHTML = '';
+                return;
+            }
+
+            placeholder.style.display = 'none';
+            previewsWrap.style.display = 'flex';
+            grid.innerHTML = '';
+
+            uploadedFiles.forEach((file, idx) => {
+                const thumb = document.createElement('div');
+                thumb.className = 'preview-thumb' + (idx === 0 ? ' is-featured' : '');
+                thumb.dataset.idx = idx;
+
+                const reader = new FileReader();
+                reader.onload = e => {
+                    thumb.innerHTML = `
+                        <img src="${e.target.result}" alt="${file.name}">
+                        ${idx === 0 ? '<span class="featured-badge"><i class="fas fa-star"></i> Featured</span>' : ''}
+                        <span class="thumb-name">${file.name.length > 16 ? file.name.slice(0,14)+'…' : file.name}</span>
+                        <button type="button" class="thumb-remove" onclick="removeUploadedImage(${idx})" title="Remove">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    `;
+                };
+                reader.readAsDataURL(file);
+                grid.appendChild(thumb);
+            });
+
+            document.getElementById('imageError').style.display = 'none';
+        }
+
+        function removeImage() {
+            uploadedFiles = [];
+            syncFilesToInput();
+            renderPreviews();
+        }
+
+        // ============================================================
+        // AI PANEL  — STATE + GENERATE + REFINE
+        // ============================================================
+        let aiDraft = null;
+        let aiOpen = true;
+
+        function toggleAIPanel() {
+            aiOpen = !aiOpen;
+            document.getElementById('aiPanelBody').style.display = aiOpen ? 'block' : 'none';
+            document.getElementById('aiChevron').style.transform = aiOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+        }
+
+        function setPrompt(text) {
+            document.getElementById('aiBrief').value = text;
+            document.getElementById('aiBrief').focus();
+        }
+
+        function setAIStatus(msg, type) {
+            const el = document.getElementById('aiStatus');
+            el.className = 'ai-status ai-status-' + type;
+            el.innerHTML = msg;
+        }
+
+        async function generateWithAI() {
+            const brief = document.getElementById('aiBrief').value.trim();
+            const category = document.getElementById('aiCategory').value;
+            const tone = document.querySelector('input[name="aiTone"]:checked').value;
+
+            if (!brief) {
+                setAIStatus('<i class="fas fa-exclamation-circle me-1"></i>Please describe the news first.', 'error');
+                document.getElementById('aiBrief').focus();
+                return;
+            }
+
+            const btn = document.getElementById('aiGenerateBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Writing with Claude…';
+            setAIStatus('', '');
+            document.getElementById('aiResult').style.display = 'none';
+
+            const toneMap = {
+                formal: 'formal official school announcement',
+                friendly: 'warm friendly community tone',
+                urgent: 'urgent time-sensitive notice',
+                bilingual: 'English followed by Filipino (Tagalog) translation separated by ---'
+            };
+
+            const prompt = `You are a school news writer for BUNHS (Buhi Unified National High School) in Albay, Philippines.
+
+Write a complete school news article based on:
+"${brief}"
+
+Category hint: ${category || 'auto-detect best fit'}
+Tone: ${toneMap[tone]}
+
+Return ONLY a JSON object with these keys:
+{
+  "title": "compelling headline max 80 chars",
+  "content": "full article 3-4 paragraphs professional Filipino school writing style",
+  "category": "best match from: Education, Politics, Travel & Tourism, Technology, Community Updates, Emergency Notices, Health & Safety, Public Service Information"
+}
+
+No markdown, no code fences, no explanation. JSON only.`;
+
+            try {
+                const res = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'claude-sonnet-4-20250514',
+                        max_tokens: 1200,
+                        messages: [{
+                            role: 'user',
+                            content: prompt
+                        }]
+                    })
+                });
+                const data = await res.json();
+                const raw = data.content?.map(b => b.text || '').join('') || '';
+                const clean = raw.replace(/```json|```/g, '').trim();
+                aiDraft = JSON.parse(clean);
+                showAIResult();
+                setAIStatus('<i class="fas fa-check-circle me-1" style="color:#4A5D23"></i>Done! Review below, then click <strong>Fill Form Fields</strong>.', 'success');
+            } catch (e) {
+                setAIStatus('<i class="fas fa-times-circle me-1"></i>Generation failed — try rephrasing your brief.', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-magic me-2"></i>Generate Article';
+            }
+        }
+
+        function showAIResult() {
+            if (!aiDraft) return;
+            document.getElementById('prevTitle').textContent = aiDraft.title;
+            document.getElementById('prevContent').textContent = aiDraft.content;
+            document.getElementById('prevCategory').textContent = aiDraft.category;
+            document.getElementById('aiResult').style.display = 'block';
+            document.getElementById('aiResult').scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest'
+            });
+        }
+
+        function fillFormFromAI() {
+            if (!aiDraft) return;
+            document.getElementById('title').value = aiDraft.title;
+            document.getElementById('content').value = aiDraft.content;
+
+            const sel = document.getElementById('category');
+            for (let i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].text === aiDraft.category) {
+                    sel.selectedIndex = i;
+                    break;
+                }
+            }
+
+            updateTitleCount();
+            updateContentCount();
+
+            ['title', 'content', 'category'].forEach(id => {
+                const el = document.getElementById(id);
+                el.classList.remove('is-invalid');
+                el.classList.add('is-valid');
+            });
+
+            document.getElementById('aiFillSuccess').style.display = 'flex';
+            document.getElementById('title').scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
+            document.getElementById('title').focus();
+            showToast('AI content filled into all form fields!', 'success');
+        }
+
+        // ── PER-FIELD REFINE ──
+        function openRefine(field) {
+            const box = document.getElementById('refineBox_' + field);
+            const isOpen = box.style.display === 'block';
+            document.querySelectorAll('.ai-refine-box').forEach(b => b.style.display = 'none');
+            if (!isOpen) {
+                box.style.display = 'block';
+                document.getElementById('refineInput_' + field).focus();
+            }
+        }
+
+        async function refineField(field) {
+            const instruction = document.getElementById('refineInput_' + field).value.trim();
+            if (!instruction || !aiDraft) return;
+            await doRefine(field, instruction);
+            document.getElementById('refineInput_' + field).value = '';
+        }
+
+        async function quickRefine(field, instruction) {
+            if (!aiDraft) return;
+            await doRefine(field, instruction);
+        }
+
+        async function doRefine(field, instruction) {
+            const previewIds = {
+                title: 'prevTitle',
+                short_description: 'prevShortDesc',
+                content: 'prevContent'
+            };
+            const previewEl = document.getElementById(previewIds[field]);
+            if (previewEl) previewEl.style.opacity = '0.4';
+
+            const prompt = `You are editing a school news post for BUNHS.
+
+Current "${field}" value:
+"${aiDraft[field]}"
+
+Instruction: ${instruction}
+
+Output ONLY the revised value as plain text. No JSON, no quotes, no explanation.`;
+
+            try {
+                const res = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'claude-sonnet-4-20250514',
+                        max_tokens: 800,
+                        messages: [{
+                            role: 'user',
+                            content: prompt
+                        }]
+                    })
+                });
+                const data = await res.json();
+                const text = data.content?.map(b => b.text || '').join('').trim() || '';
+                aiDraft[field] = text;
+                showAIResult();
+            } catch (e) {
+                setAIStatus('<i class="fas fa-times-circle me-1"></i>Refinement failed.', 'error');
+            } finally {
+                if (previewEl) previewEl.style.opacity = '1';
+                document.querySelectorAll('.ai-refine-box').forEach(b => b.style.display = 'none');
+            }
+        }
+
+        // ============================================================
+        // FORM VALIDATION + SUBMISSION
+        // ============================================================
         document.addEventListener('DOMContentLoaded', function() {
+
+            initImageUpload();
+            checkForDraft();
+
+            // Live validation listeners
+            document.getElementById('title').addEventListener('input', updateTitleCount);
+            document.getElementById('content').addEventListener('input', updateContentCount);
+            document.getElementById('category').addEventListener('change', () => {
+                updateProgress();
+                scheduleDraftSave();
+            });
+
+            // Clear draft + reset form on modal close
+            document.getElementById('createNewsModal').addEventListener('hidden.bs.modal', function() {
+                // Don't clear draft on close — let it persist for restore
+            });
+
+            // ── FORM SUBMIT ──
             const form = document.getElementById('newsForm');
             const submitBtn = document.getElementById('submitBtn');
 
-            // Character count validation
-            const titleInput = document.getElementById('title');
-            const shortDescInput = document.getElementById('short_description');
-            const contentInput = document.getElementById('content');
-            const authorInput = document.getElementById('author');
-
-            // Real-time validation using update functions
-            titleInput.addEventListener('input', updateTitleCount);
-            shortDescInput.addEventListener('input', updateDescCount);
-            contentInput.addEventListener('input', updateContentCount);
-
-            authorInput.addEventListener('input', function() {
-                const length = this.value.length;
-                if (length > 0 && length < 2) {
-                    this.classList.add('is-invalid');
-                    this.classList.remove('is-valid');
-                } else if (length === 0 || length >= 2) {
-                    this.classList.remove('is-invalid');
-                    this.classList.add('is-valid');
-                }
-            });
-
-            // Form submission with loading state
             form.addEventListener('submit', function(e) {
-                e.preventDefault(); // Prevent default form submission
+                e.preventDefault();
 
-                // Validate all fields before submission
-                let isValid = true;
-
-                // Title validation
-                const titleLength = titleInput.value.length;
-                if (titleLength < 5 || titleLength > 100) {
-                    titleInput.classList.add('is-invalid');
-                    isValid = false;
-                } else {
-                    titleInput.classList.remove('is-invalid');
-                    titleInput.classList.add('is-valid');
-                }
-
-                // Short description validation
-                const descLength = shortDescInput.value.length;
-                if (descLength < 10 || descLength > 200) {
-                    shortDescInput.classList.add('is-invalid');
-                    isValid = false;
-                } else {
-                    shortDescInput.classList.remove('is-invalid');
-                    shortDescInput.classList.add('is-valid');
-                }
-
-                // Content validation
-                const contentLength = contentInput.value.length;
-                if (contentLength < 50) {
-                    contentInput.classList.add('is-invalid');
-                    isValid = false;
-                } else {
-                    contentInput.classList.remove('is-invalid');
-                    contentInput.classList.add('is-valid');
-                }
-
-                // Author validation (optional but if provided, must be at least 2 chars)
-                const authorLength = authorInput.value.length;
-                if (authorLength > 0 && authorLength < 2) {
-                    authorInput.classList.add('is-invalid');
-                    isValid = false;
-                } else if (authorLength === 0 || authorLength >= 2) {
-                    authorInput.classList.remove('is-invalid');
-                    if (authorLength >= 2) authorInput.classList.add('is-valid');
-                }
-
-                // Category validation
+                const titleInput = document.getElementById('title');
+                const contentInput = document.getElementById('content');
                 const categorySelect = document.getElementById('category');
-                if (!categorySelect.value) {
-                    categorySelect.classList.add('is-invalid');
-                    isValid = false;
-                } else {
-                    categorySelect.classList.remove('is-invalid');
-                    categorySelect.classList.add('is-valid');
-                }
+
+                let isValid = true;
+                const checks = [
+                    [titleInput, titleInput.value.length >= 1 && titleInput.value.length <= 100, 'titleError'],
+                    [contentInput, contentInput.value.length >= 1, 'contentError'],
+                    [categorySelect, !!categorySelect.value, 'categoryError'],
+                ];
+
+                checks.forEach(([el, valid, errId]) => {
+                    el.classList.toggle('is-invalid', !valid);
+                    el.classList.toggle('is-valid', valid);
+                    document.getElementById(errId).style.display = valid ? 'none' : 'block';
+                    if (!valid) isValid = false;
+                });
 
                 if (!isValid) {
-                    // Scroll to first invalid field
                     const firstInvalid = form.querySelector('.is-invalid');
                     if (firstInvalid) {
                         firstInvalid.scrollIntoView({
@@ -548,350 +1198,1195 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         });
                         firstInvalid.focus();
                     }
-                    return false;
+                    showToast('Please fix the highlighted fields before publishing.', 'error');
+                    return;
                 }
 
-                // Show confirmation modal
-                const confirmationModal = new bootstrap.Modal(document.getElementById('confirmationModal'));
-                confirmationModal.show();
+                // Show confirm modal with summary
+                const summary = `
+                <div class="confirm-row"><span class="confirm-label">Title:</span><span>${titleInput.value}</span></div>
+                <div class="confirm-row"><span class="confirm-label">Category:</span><span>${categorySelect.value}</span></div>
+            `;
+                document.getElementById('confirmSummary').innerHTML = summary;
+                new bootstrap.Modal(document.getElementById('confirmationModal')).show();
 
-                // Handle confirmation
                 document.getElementById('confirmYes').addEventListener('click', function() {
-                    confirmationModal.hide();
-
-                    // Show loading state
+                    bootstrap.Modal.getInstance(document.getElementById('confirmationModal')).hide();
                     submitBtn.disabled = true;
-                    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Creating...';
+                    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Publishing…';
 
-                    // Create FormData for AJAX submission
-                    const formData = new FormData(form);
-
-                    // Send AJAX request
                     fetch('', {
                             method: 'POST',
-                            body: formData,
+                            body: new FormData(form),
                             headers: {
                                 'X-Requested-With': 'XMLHttpRequest'
                             }
                         })
-                        .then(response => response.json())
+                        .then(r => r.json())
                         .then(data => {
                             if (data.status === 'success') {
-                                // Success: close modal, reset form, show success message, reload content
-                                const modal = bootstrap.Modal.getInstance(document.getElementById('createNewsModal'));
-                                modal.hide();
+                                bootstrap.Modal.getInstance(document.getElementById('createNewsModal'))?.hide();
                                 form.reset();
-                                // Reset validation states
-                                form.querySelectorAll('.is-valid, .is-invalid').forEach(el => {
-                                    el.classList.remove('is-valid', 'is-invalid');
-                                });
+                                uploadedFiles = [];
+                                renderPreviews();
+                                form.querySelectorAll('.is-valid, .is-invalid').forEach(el => el.classList.remove('is-valid', 'is-invalid'));
+                                form.querySelectorAll('.invalid-feedback').forEach(el => el.style.display = 'none');
                                 updateTitleCount();
-                                updateDescCount();
                                 updateContentCount();
-                                // Reload the hero section to show new news
-                                fetch('hero_dynamic.php')
-                                    .then(response => response.text())
-                                    .then(html => {
-                                        document.querySelector('.col-lg-8').innerHTML = html;
-                                    })
-                                    .catch(error => console.error('Error reloading hero content:', error));
+                                aiDraft = null;
+                                document.getElementById('aiResult').style.display = 'none';
+                                document.getElementById('aiFillSuccess').style.display = 'none';
+                                document.getElementById('draftSaved').style.display = 'none';
+                                localStorage.removeItem('news_draft');
 
-                                // Reload the news posts section to show new news
-                                fetch('news_posts_dynamic.php')
-                                    .then(response => response.text())
-                                    .then(html => {
-                                        document.querySelector('#news-posts .row.gy-5').innerHTML = html;
-                                    })
-                                    .catch(error => console.error('Error reloading news posts content:', error));
-                                // Optional: show success toast or alert
-                                alert('News post created successfully!');
+                                // Refresh sections
+                                fetch('hero_dynamic.php').then(r => r.text()).then(html => {
+                                    document.querySelector('.col-lg-8').innerHTML = html;
+                                });
+                                fetch('news_posts_dynamic.php').then(r => r.text()).then(html => {
+                                    document.querySelector('#news-posts .row.gy-5').innerHTML = html;
+                                });
+                                fetch('sidebar_dynamic.php').then(r => r.text()).then(html => {
+                                    document.querySelector('.tab-content').innerHTML = html;
+                                });
+
+                                showToast('🎉 Announcement published successfully!', 'success', 5000);
                             } else {
-                                // Error: show error message
-                                alert('Error: ' + data.message);
+                                showToast('Error: ' + data.message, 'error');
                             }
                         })
-                        .catch(error => {
-                            console.error('Error:', error);
-                            alert('An error occurred while creating the news post.');
-                        })
+                        .catch(() => showToast('A network error occurred. Please try again.', 'error'))
                         .finally(() => {
-                            // Reset button state
                             submitBtn.disabled = false;
-                            submitBtn.innerHTML = '<i class="fas fa-save me-2"></i>Create Announcement';
+                            submitBtn.innerHTML = '<i class="fas fa-paper-plane me-2"></i>Publish Announcement';
                         });
                 }, {
                     once: true
-                }); // Use once to avoid multiple event listeners
-
-                return; // Prevent further execution until confirmation
+                });
             });
 
-            // File upload preview (optional enhancement)
-            const imageInput = document.getElementById('image');
-            imageInput.addEventListener('change', function() {
-                const file = this.files[0];
-                if (file) {
-                    // Basic file validation
-                    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-                    const maxSize = 5 * 1024 * 1024; // 5MB
+            // ── DELETE with modal ──
+            let pendingDeleteId = null;
 
-                    if (!allowedTypes.includes(file.type)) {
-                        alert('Please select a valid image file (JPEG, PNG, GIF, or WebP).');
-                        this.value = '';
-                        return;
-                    }
-
-                    if (file.size > maxSize) {
-                        alert('File size must be less than 5MB.');
-                        this.value = '';
-                        return;
-                    }
-                }
-            });
-
-            // Delete post functionality
             document.addEventListener('click', function(e) {
-                if (e.target.closest('.delete-post')) {
-                    e.preventDefault();
-                    const button = e.target.closest('.delete-post');
-                    const postId = button.getAttribute('data-id');
+                if (!e.target.closest('.delete-post')) return;
+                e.preventDefault();
+                const btn = e.target.closest('.delete-post');
+                pendingDeleteId = btn.getAttribute('data-id');
+                const postTitle = btn.getAttribute('data-title') || 'this post';
+                document.getElementById('deleteModalTitle').textContent = '"' + postTitle + '"';
+                new bootstrap.Modal(document.getElementById('deleteModal')).show();
+            });
 
-                    if (confirm('Are you sure you want to delete this news post?')) {
-                        // Send delete request
-                        fetch('', {
-                                method: 'POST',
-                                body: new URLSearchParams({
-                                    'action': 'delete',
-                                    'id': postId
-                                }),
-                                headers: {
-                                    'X-Requested-With': 'XMLHttpRequest',
-                                    'Content-Type': 'application/x-www-form-urlencoded'
-                                }
-                            })
-                            .then(response => response.json())
-                            .then(data => {
-                                if (data.status === 'success') {
-                                    // Reload the hero section and sidebar to reflect changes
-                                    fetch('hero_dynamic.php')
-                                        .then(response => response.text())
-                                        .then(html => {
-                                            document.querySelector('.col-lg-8').innerHTML = html;
-                                        })
-                                        .catch(error => console.error('Error reloading hero content:', error));
+            document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+                if (!pendingDeleteId) return;
+                const modal = bootstrap.Modal.getInstance(document.getElementById('deleteModal'));
+                modal.hide();
+                this.disabled = true;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Deleting…';
 
-                                    fetch('sidebar_dynamic.php')
-                                        .then(response => response.text())
-                                        .then(html => {
-                                            document.querySelector('.tab-content').innerHTML = html;
-                                        })
-                                        .catch(error => console.error('Error reloading sidebar content:', error));
-
-                                    // Reload the news posts section to reflect changes
-                                    fetch('news_posts_dynamic.php')
-                                        .then(response => response.text())
-                                        .then(html => {
-                                            document.querySelector('#news-posts .row.gy-5').innerHTML = html;
-                                        })
-                                        .catch(error => console.error('Error reloading news posts content:', error));
-
-                                    alert('News post deleted successfully!');
-                                } else {
-                                    alert('Error: ' + data.message);
-                                }
-                            })
-                            .catch(error => {
-                                console.error('Error:', error);
-                                alert('An error occurred while deleting the news post.');
+                fetch('', {
+                        method: 'POST',
+                        body: new URLSearchParams({
+                            action: 'delete',
+                            id: pendingDeleteId
+                        }),
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        }
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            fetch('hero_dynamic.php').then(r => r.text()).then(html => {
+                                document.querySelector('.col-lg-8').innerHTML = html;
                             });
-                    }
-                }
+                            fetch('sidebar_dynamic.php').then(r => r.text()).then(html => {
+                                document.querySelector('.tab-content').innerHTML = html;
+                            });
+                            fetch('news_posts_dynamic.php').then(r => r.text()).then(html => {
+                                document.querySelector('#news-posts .row.gy-5').innerHTML = html;
+                            });
+                            showToast('Post deleted successfully.', 'success');
+                        } else {
+                            showToast('Error: ' + data.message, 'error');
+                        }
+                    })
+                    .catch(() => showToast('A network error occurred while deleting.', 'error'))
+                    .finally(() => {
+                        this.disabled = false;
+                        this.innerHTML = '<i class="fas fa-trash me-1"></i>Delete';
+                        pendingDeleteId = null;
+                    });
             });
         });
     </script>
 
     <style>
-        /* Moss Green Theme Variables */
+        /* ============================================================
+           MOSS GREEN THEME VARIABLES
+        ============================================================ */
         :root {
-            --moss-green-primary: #4A5D23;
-            /* hsl(75, 35%, 25%) */
-            --moss-green-light: #6B7F3A;
-            /* hsl(75, 35%, 35%) */
-            --moss-green-lighter: #7A8F4A;
-            /* hsl(75, 35%, 45%) */
-            --moss-green-lightest: #8A9F5A;
-            /* hsl(75, 35%, 48%) */
+            --mg-primary: #4A5D23;
+            --mg-light: #6B7F3A;
+            --mg-lighter: #7A8F4A;
+            --mg-50: #f0f7e6;
+            --mg-100: #e0edc8;
+            --mg-200: #c8d8a8;
             --white: #FFFFFF;
-            --gray-light: #F8F9FA;
+            --gray-50: #F8F9FA;
+            --gray-100: #F1F3F5;
+            --gray-200: #E9ECEF;
+            --gray-400: #CED4DA;
+            --gray-600: #6C757D;
             --text-primary: #212529;
             --text-secondary: #6C757D;
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, .08);
+            --shadow-md: 0 4px 16px rgba(0, 0, 0, .10);
+            --shadow-lg: 0 8px 32px rgba(0, 0, 0, .14);
         }
 
-        /* Modal Content Background */
-        .modal-content {
-            background-color: var(--white);
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        /* ============================================================
+           TOAST NOTIFICATIONS
+        ============================================================ */
+        #toastContainer {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+            max-width: 380px;
         }
 
-        /* Form Labels - Highlight Primary Information */
-        .form-label {
-            font-weight: 500;
+        .custom-toast {
+            background: #fff;
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-lg);
+            padding: 13px 16px 16px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            pointer-events: all;
+            opacity: 0;
+            transform: translateX(30px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            border: 1px solid var(--gray-200);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .custom-toast.toast-visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .custom-toast.toast-exit {
+            opacity: 0;
+            transform: translateX(30px);
+        }
+
+        .toast-icon {
+            font-size: 16px;
+            margin-top: 1px;
+            flex-shrink: 0;
+        }
+
+        .toast-msg {
+            font-size: 13.5px;
             color: var(--text-primary);
-            margin-bottom: 0.5rem;
+            flex: 1;
+            line-height: 1.4;
         }
 
-        .form-label::after {
-            content: " *";
-            color: var(--moss-green-primary);
-            font-weight: 500;
+        .toast-close {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--gray-600);
+            font-size: 11px;
+            padding: 2px;
+            flex-shrink: 0;
+            margin-left: auto;
         }
 
-        /* Form Controls */
+        .toast-close:hover {
+            color: var(--text-primary);
+        }
+
+        .toast-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 3px;
+            border-radius: 0 0 0 var(--radius-md);
+            animation: toastProgress linear forwards;
+            opacity: 0.6;
+        }
+
+        @keyframes toastProgress {
+            from {
+                width: 100%;
+            }
+
+            to {
+                width: 0%;
+            }
+        }
+
+        /* ============================================================
+           FLOATING ACTION BUTTON
+        ============================================================ */
+        .fab-container {
+            position: fixed;
+            bottom: 32px;
+            right: 32px;
+            z-index: 1050;
+        }
+
+        .fab-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, var(--mg-primary), var(--mg-light));
+            color: white;
+            border: none;
+            border-radius: 50px;
+            padding: 14px 22px 14px 18px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 6px 24px rgba(74, 93, 35, 0.45);
+            transition: all 0.25s ease;
+            letter-spacing: 0.2px;
+        }
+
+        .fab-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 32px rgba(74, 93, 35, 0.55);
+        }
+
+        .fab-icon {
+            font-size: 16px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* ============================================================
+           MODAL IMPROVEMENTS
+        ============================================================ */
+        .modal-content {
+            border-radius: var(--radius-lg);
+            border: none;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .modal-header {
+            border-bottom: 1px solid var(--gray-200);
+            padding: 1.25rem 1.75rem;
+        }
+
+        .modal-icon-wrap {
+            width: 42px;
+            height: 42px;
+            background: var(--mg-50);
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--mg-primary);
+            font-size: 18px;
+        }
+
+        .modal-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .modal-subtitle {
+            font-size: 12px;
+            color: var(--gray-600);
+        }
+
+        .modal-footer {
+            border-top: 1px solid var(--gray-200);
+            padding: 1rem 1.75rem;
+        }
+
+        .footer-left {
+            min-width: 120px;
+        }
+
+        .draft-indicator,
+        .draft-saved {
+            display: flex;
+            align-items: center;
+        }
+
+        /* ── Draft Restore Banner ── */
+        .draft-restore-banner {
+            background: #fffbeb;
+            border-bottom: 1px solid #fde68a;
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            color: #92400e;
+        }
+
+        .btn-restore {
+            background: #f59e0b;
+            color: white;
+            border: none;
+            border-radius: var(--radius-sm);
+            padding: 4px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .btn-discard {
+            background: transparent;
+            color: #92400e;
+            border: 1px solid #fcd34d;
+            border-radius: var(--radius-sm);
+            padding: 4px 12px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        /* ============================================================
+           FORM PROGRESS BAR
+        ============================================================ */
+        .form-progress-wrap {
+            background: var(--gray-50);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius-md);
+            padding: 10px 14px;
+        }
+
+        .form-progress-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--gray-600);
+            margin-bottom: 6px;
+        }
+
+        .progress-pct {
+            font-weight: 700;
+            transition: color 0.3s;
+        }
+
+        .form-progress-bar-track {
+            height: 6px;
+            background: var(--gray-200);
+            border-radius: 99px;
+            overflow: hidden;
+        }
+
+        .form-progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--mg-primary), var(--mg-lighter));
+            border-radius: 99px;
+            transition: width 0.4s ease;
+        }
+
+        /* ============================================================
+           FORM GROUP CARDS
+        ============================================================ */
+        .form-group-card {
+            background: var(--white);
+            border: 1.5px solid var(--gray-200);
+            border-radius: var(--radius-md);
+            padding: 14px 16px;
+            transition: border-color 0.2s;
+        }
+
+        .form-group-card:focus-within {
+            border-color: var(--mg-light);
+            box-shadow: 0 0 0 3px rgba(74, 93, 35, 0.08);
+        }
+
+        .required-label::after {
+            content: ' *';
+            color: var(--mg-primary);
+            font-weight: 600;
+        }
+
+        .form-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+
+        .label-icon {
+            color: var(--mg-light);
+            font-size: 12px;
+        }
+
         .form-control,
         .form-select {
-            border: 2px solid #E9ECEF;
-            border-radius: 8px;
-            padding: 0.75rem;
-            font-size: 1rem;
-            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+            border: 1.5px solid var(--gray-200);
+            border-radius: var(--radius-sm);
+            padding: .65rem .85rem;
+            font-size: 14px;
+            transition: border-color .2s, box-shadow .2s;
+            background: var(--gray-50);
         }
 
         .form-control:focus,
         .form-select:focus {
-            border-color: var(--moss-green-light);
-            box-shadow: 0 0 0 0.2rem rgba(74, 93, 35, 0.25);
+            border-color: var(--mg-light);
+            box-shadow: 0 0 0 3px rgba(74, 93, 35, 0.12);
+            background: var(--white);
         }
 
-        /* Form Validation Styles */
-        .form-control.is-valid {
-            border-color: var(--moss-green-light);
-            box-shadow: 0 0 0 0.2rem rgba(74, 93, 35, 0.25);
+        .form-control.is-valid,
+        .form-select.is-valid {
+            border-color: var(--mg-light);
         }
 
-        .form-control.is-invalid {
+        .form-control.is-invalid,
+        .form-select.is-invalid {
             border-color: #dc3545;
-            box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
         }
 
-        /* Character Count Styling */
+        .content-textarea {
+            min-height: 160px;
+            resize: vertical;
+        }
+
+        .field-meta {
+            font-size: 12px;
+            color: var(--gray-600);
+        }
+
+        .field-hint {
+            color: var(--gray-600);
+        }
+
         .char-count {
-            font-size: 0.875rem;
-            font-weight: 500;
-            color: var(--text-secondary);
-        }
-
-        /* Form Text */
-        .form-text {
-            font-size: 0.875rem;
-            color: var(--text-secondary);
-            margin-top: 0.25rem;
-        }
-
-        /* Buttons */
-        .btn-primary {
-            background-color: var(--moss-green-primary);
-            border-color: var(--moss-green-primary);
             font-weight: 600;
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            transition: background-color 0.3s ease, transform 0.2s ease;
+            color: var(--mg-primary);
         }
 
-        .btn-primary:hover {
-            background-color: var(--moss-green-light);
-            border-color: var(--moss-green-light);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(74, 93, 35, 0.3);
+        .invalid-feedback {
+            font-size: 12px;
+            color: #dc3545;
+            display: none;
+            margin-top: 4px;
         }
 
-        .btn-primary:active {
-            transform: translateY(0);
+        /* ============================================================
+           IMAGE UPLOAD ZONE
+        ============================================================ */
+        /* ── Multi-Image Upload Zone ── */
+        .multi-image-upload-zone {
+            border: 2px dashed var(--gray-400);
+            border-radius: var(--radius-md);
+            background: var(--gray-50);
+            transition: border-color .2s, background .2s;
+            cursor: pointer;
+            overflow: hidden;
+            min-height: 130px;
         }
 
-        .btn-secondary {
-            background-color: var(--gray-light);
-            border-color: #DEE2E6;
-            color: var(--text-primary);
-            font-weight: 500;
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
+        .multi-image-upload-zone:hover,
+        .multi-image-upload-zone.drag-over {
+            border-color: var(--mg-light);
+            background: var(--mg-50);
         }
 
-        .btn-secondary:hover {
-            background-color: #E9ECEF;
-            border-color: #ADB5BD;
+        .image-upload-placeholder {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 28px 20px;
+            text-align: center;
         }
 
-        /* Visual Hierarchy - Group Fields */
-        .row.g-3>.col-12,
-        .row.g-3>.col-md-6 {
-            margin-bottom: 1.5rem;
-            background-color: rgba(255, 255, 255, 0.8);
-            border-radius: 8px;
-            padding: 1rem;
-            border: 1px solid rgba(74, 93, 35, 0.1);
+        .upload-icon {
+            font-size: 32px;
+            color: var(--gray-400);
+            margin-bottom: 8px;
         }
 
-        /* Section Borders for Hierarchy */
-        .modal-body {
-            padding: 2rem;
+        .multi-image-upload-zone:hover .upload-icon {
+            color: var(--mg-light);
         }
 
-        .modal-header {
-            border-bottom: 1px solid #E9ECEF;
-            padding: 1.5rem 2rem;
+        .upload-text {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
         }
 
-        .modal-footer {
-            border-top: 1px solid #E9ECEF;
-            padding: 1.5rem 2rem;
+        .upload-link {
+            color: var(--mg-primary);
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: underline;
         }
 
-        /* Responsive Design */
-        @media (max-width: 768px) {
-
-            .modal-body,
-            .modal-header,
-            .modal-footer {
-                padding: 1rem;
-            }
-
-            .form-control,
-            .form-select {
-                padding: 0.5rem;
-            }
-
-            .btn {
-                padding: 0.5rem 1rem;
-                font-size: 0.9rem;
-            }
+        .upload-sub {
+            font-size: 12px;
+            color: var(--gray-600);
+            margin: 0;
         }
 
-        /* Highlight Required Fields */
-        .form-label[for="title"],
-        .form-label[for="short_description"],
-        .form-label[for="content"],
-        .form-label[for="category"] {
+        /* Preview grid */
+        .multi-image-previews {
+            display: flex;
+            flex-direction: column;
+            padding: 14px 14px 10px;
+            gap: 10px;
+            background: white;
+        }
+
+        .preview-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .preview-thumb {
             position: relative;
+            width: 110px;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid var(--gray-200);
+            background: #fff;
+            box-shadow: var(--shadow-sm);
+            transition: border-color .2s;
         }
 
-        .form-label[for="title"]::before,
-        .form-label[for="short_description"]::before,
-        .form-label[for="content"]::before,
-        .form-label[for="category"]::before {
-            content: "";
+        .preview-thumb.is-featured {
+            border-color: var(--mg-primary);
+        }
+
+        .preview-thumb img {
+            width: 110px;
+            height: 80px;
+            object-fit: cover;
+            display: block;
+        }
+
+        .featured-badge {
             position: absolute;
-            left: -10px;
+            top: 4px;
+            left: 4px;
+            background: var(--mg-primary);
+            color: #fff;
+            font-size: 9px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .thumb-name {
+            display: block;
+            font-size: 10px;
+            color: var(--text-secondary);
+            padding: 4px 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .thumb-remove {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: rgba(220, 53, 69, .85);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            font-size: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background .15s;
+        }
+
+        .thumb-remove:hover {
+            background: #dc3545;
+        }
+
+        .add-more-photos-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--mg-50);
+            border: 1.5px dashed var(--mg-200);
+            border-radius: 8px;
+            color: var(--mg-primary);
+            font-size: 12px;
+            font-weight: 600;
+            padding: 7px 14px;
+            cursor: pointer;
+            transition: background .15s;
+            align-self: flex-start;
+        }
+
+        .add-more-photos-btn:hover {
+            background: var(--mg-100);
+        }
+
+
+        /* ============================================================
+           PUBLISH BUTTON
+        ============================================================ */
+        .btn-publish {
+            background: linear-gradient(135deg, var(--mg-primary), var(--mg-light));
+            border: none;
+            color: white;
+            font-weight: 700;
+            padding: .65rem 1.4rem;
+            border-radius: var(--radius-md);
+            transition: all .2s;
+            font-size: 14px;
+        }
+
+        .btn-publish:hover {
+            background: linear-gradient(135deg, var(--mg-light), var(--mg-lighter));
+            transform: translateY(-1px);
+            box-shadow: 0 5px 16px rgba(74, 93, 35, .35);
+            color: white;
+        }
+
+        .btn-publish:disabled {
+            opacity: .65;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* ============================================================
+           CONFIRM SUMMARY
+        ============================================================ */
+        .confirm-summary {
+            background: var(--gray-50);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius-md);
+            padding: 10px 14px;
+        }
+
+        .confirm-row {
+            display: flex;
+            gap: 10px;
+            font-size: 13px;
+            padding: 3px 0;
+        }
+
+        .confirm-label {
+            font-weight: 600;
+            color: var(--gray-600);
+            min-width: 70px;
+            flex-shrink: 0;
+        }
+
+        /* ============================================================
+           DELETE MODAL
+        ============================================================ */
+        .delete-modal-content {
+            border-radius: var(--radius-lg);
+            text-align: center;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .delete-modal-icon {
+            background: #fff5f5;
+            padding: 24px;
+            font-size: 28px;
+            color: #dc3545;
+        }
+
+        .delete-modal-body {
+            padding: 16px 24px 8px;
+        }
+
+        .delete-modal-body h6 {
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .delete-modal-body p {
+            font-size: 13px;
+        }
+
+        .delete-modal-footer {
+            padding: 12px 24px 20px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        /* ============================================================
+           AI FILL SUCCESS BANNER
+        ============================================================ */
+        .ai-fill-success {
+            background: var(--mg-50);
+            border: 1px solid var(--mg-200);
+            border-radius: var(--radius-md);
+            padding: 10px 16px;
+            font-size: 13px;
+            color: var(--mg-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        /* ============================================================
+           AI PANEL  (preserved + refined)
+        ============================================================ */
+        .ai-panel {
+            border-bottom: 2px solid #e0ead0;
+            background: #f8fdf4;
+        }
+
+        .ai-panel-header {
+            background: linear-gradient(135deg, #4A5D23 0%, #6B7F3A 100%);
+            padding: 14px 22px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            user-select: none;
+            transition: background 0.2s;
+        }
+
+        .ai-panel-header:hover {
+            background: linear-gradient(135deg, #3d4e1c 0%, #5c6e30 100%);
+        }
+
+        .ai-panel-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: white;
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .ai-sparkle {
+            font-size: 18px;
+        }
+
+        .ai-badge {
+            background: rgba(255, 255, 255, .2);
+            border: 1px solid rgba(255, 255, 255, .35);
+            color: white;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 9px;
+            border-radius: 20px;
+        }
+
+        .ai-panel-subtitle {
+            color: rgba(255, 255, 255, .78);
+            font-size: 12px;
+            margin-top: 3px;
+            padding-left: 28px;
+        }
+
+        .ai-chevron {
+            position: absolute;
+            right: 20px;
             top: 50%;
             transform: translateY(-50%);
-            width: 4px;
-            height: 4px;
-            background-color: var(--moss-green-primary);
-            border-radius: 50%;
+            color: rgba(255, 255, 255, .8);
+            font-size: 14px;
+            transition: transform 0.3s;
         }
 
-        /* Adjust main-page-content positioning */
+        .ai-panel-body {
+            padding: 18px 22px 16px;
+        }
+
+        .ai-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--mg-primary);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: .4px;
+        }
+
+        .ai-brief-area textarea {
+            width: 100%;
+            border: 2px solid #d1e0b8;
+            border-radius: 10px;
+            padding: 10px 13px;
+            font-size: 13.5px;
+            font-family: inherit;
+            resize: vertical;
+            outline: none;
+            background: white;
+            color: var(--text-primary);
+            line-height: 1.6;
+            transition: border-color .2s, box-shadow .2s;
+        }
+
+        .ai-brief-area textarea:focus {
+            border-color: var(--mg-light);
+            box-shadow: 0 0 0 3px rgba(74, 93, 35, .12);
+        }
+
+        .ai-quick-prompts {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .ai-qs-label {
+            font-size: 11px;
+            color: #9ca3af;
+            font-weight: 600;
+        }
+
+        .ai-qs-btn {
+            background: white;
+            border: 1px solid #c8d8a8;
+            border-radius: 20px;
+            padding: 3px 11px;
+            font-size: 11px;
+            color: var(--mg-primary);
+            cursor: pointer;
+            font-weight: 500;
+            transition: all .15s;
+        }
+
+        .ai-qs-btn:hover {
+            background: #e8f0d8;
+            border-color: var(--mg-light);
+        }
+
+        .ai-options-row {
+            display: flex;
+            gap: 18px;
+            margin-top: 14px;
+            flex-wrap: wrap;
+        }
+
+        .ai-option-group {
+            flex: 1 1 160px;
+        }
+
+        .ai-option-group select {
+            width: 100%;
+            border: 2px solid #d1e0b8;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 13px;
+            font-family: inherit;
+            outline: none;
+            background: white;
+            transition: border-color .2s;
+        }
+
+        .ai-option-group select:focus {
+            border-color: var(--mg-light);
+        }
+
+        .ai-tone-group {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .ai-tone-btn {
+            flex: 1 1 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #d1e0b8;
+            border-radius: 8px;
+            padding: 7px 8px;
+            cursor: pointer;
+            background: white;
+            transition: all .15s;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--gray-600);
+        }
+
+        .ai-tone-btn input {
+            display: none;
+        }
+
+        .ai-tone-btn:has(input:checked) {
+            background: var(--mg-50);
+            border-color: var(--mg-primary);
+            color: var(--mg-primary);
+        }
+
+        .ai-tone-btn:hover {
+            background: var(--mg-50);
+        }
+
+        .ai-generate-row {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
+
+        .ai-generate-btn {
+            background: linear-gradient(135deg, #4A5D23, #6B7F3A);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 11px 26px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all .2s;
+            box-shadow: 0 3px 12px rgba(74, 93, 35, .35);
+        }
+
+        .ai-generate-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 18px rgba(74, 93, 35, .4);
+        }
+
+        .ai-generate-btn:disabled {
+            opacity: .65;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .ai-status {
+            font-size: 13px;
+        }
+
+        .ai-status-error {
+            color: #dc3545;
+        }
+
+        .ai-status-success {
+            color: var(--mg-primary);
+        }
+
+        .ai-status-loading {
+            color: var(--gray-600);
+        }
+
+        .ai-result {
+            margin-top: 16px;
+            border: 2px solid #c8d8a8;
+            border-radius: 12px;
+            overflow: hidden;
+            background: white;
+        }
+
+        .ai-result-header {
+            background: var(--mg-50);
+            border-bottom: 1px solid #d1e0b8;
+            padding: 10px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            color: var(--mg-primary);
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .ai-fill-btn {
+            background: var(--mg-primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 7px 16px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background .2s;
+        }
+
+        .ai-fill-btn:hover {
+            background: var(--mg-light);
+        }
+
+        .ai-fill-btn-lg {
+            padding: 10px 22px;
+            font-size: 13px;
+        }
+
+        .ai-field-preview {
+            border-bottom: 1px solid #f0f0f0;
+            padding: 10px 16px;
+        }
+
+        .ai-field-preview:last-child {
+            border-bottom: none;
+        }
+
+        .ai-fp-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: .4px;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .ai-fp-value {
+            font-size: 13px;
+            color: var(--text-primary);
+            line-height: 1.55;
+            transition: opacity .3s;
+        }
+
+        .ai-fp-content {
+            max-height: 90px;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 4;
+            -webkit-box-orient: vertical;
+        }
+
+        .ai-field-row {
+            display: flex;
+        }
+
+        .ai-field-row .ai-field-preview {
+            flex: 1;
+        }
+
+        .ai-refine-pill {
+            background: transparent;
+            border: 1px solid #c8d8a8;
+            border-radius: 12px;
+            padding: 1px 9px;
+            font-size: 10px;
+            color: var(--mg-primary);
+            cursor: pointer;
+            margin-left: 8px;
+            font-weight: 600;
+            transition: all .15s;
+        }
+
+        .ai-refine-pill:hover {
+            background: #e8f0d8;
+        }
+
+        .ai-refine-box {
+            margin-top: 8px;
+            background: #f8fdf4;
+            border: 1px solid #d1e0b8;
+            border-radius: 8px;
+            padding: 10px 12px;
+        }
+
+        .ai-refine-box input {
+            width: 100%;
+            border: 1px solid #d1e0b8;
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-family: inherit;
+            outline: none;
+            margin-bottom: 6px;
+        }
+
+        .ai-refine-box input:focus {
+            border-color: var(--mg-light);
+        }
+
+        .ai-refine-box button {
+            background: var(--mg-primary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 5px 14px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-bottom: 6px;
+        }
+
+        .ai-refine-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        .ai-refine-chips span {
+            background: white;
+            border: 1px solid #c8d8a8;
+            border-radius: 12px;
+            padding: 2px 9px;
+            font-size: 10px;
+            color: var(--mg-primary);
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .ai-refine-chips span:hover {
+            background: #e8f0d8;
+        }
+
+        .ai-result-footer {
+            padding: 12px 16px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .ai-regen-btn {
+            background: transparent;
+            border: 1px solid #d1e0b8;
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--mg-primary);
+            cursor: pointer;
+            transition: all .15s;
+        }
+
+        .ai-regen-btn:hover {
+            background: var(--mg-50);
+        }
+
+        /* ============================================================
+           MISC
+        ============================================================ */
         .page-content {
             margin-left: 0;
             width: calc(100vw - 260px);
@@ -899,11 +2394,34 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             padding: 0 20px;
         }
 
-        /* Center the no news messages */
-        .text-muted {
-            text-align: center !important;
+        @media (max-width: 768px) {
+            .ai-options-row {
+                flex-direction: column;
+            }
+
+            .ai-tone-group {
+                flex-wrap: wrap;
+            }
+
+            .page-content {
+                width: 100%;
+            }
+
+            .fab-btn .fab-label {
+                display: none;
+            }
+
+            .fab-btn {
+                padding: 14px;
+                border-radius: 50%;
+            }
+
+            #toastContainer {
+                max-width: calc(100vw - 40px);
+            }
         }
     </style>
+
 </body>
 
 </html>

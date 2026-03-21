@@ -993,25 +993,36 @@ $educMap = [
             width: 90px;
         }
 
-        /* Banner row */
+        /* ── Table 1 styling for multi-level headers ── */
+        .t1 tr:first-child td {
+            border-bottom: 2px solid #111 !important;
+            vertical-align: middle !important;
+            padding: 8px 6px !important;
+            line-height: 1.4 !important;
+        }
+
+        .t1 tr:nth-child(2) td {
+            border-bottom: 1px solid #111 !important;
+        }
+
+        .t1 tr:nth-child(3) td {
+            border-top: 1px solid #111 !important;
+            font-weight: 700;
+            font-size: 10px;
+            text-align: center;
+            vertical-align: middle;
+            padding: 6px 4px;
+            line-height: 1.2;
+            height: 35px;
+        }
+
+        /* ── Banner row (removed/deprecated) ── */
         .t1banrow {
-            display: flex;
-            border-top: 1px solid #111;
-            border-bottom: 1px solid #111;
+            display: none;
         }
 
         .t1ban {
-            flex: 1;
-            font-weight: 700;
-            font-size: 10.5px;
-            text-align: center;
-            padding: 5px 8px;
-            border-right: 1px solid #111;
-            line-height: 1.3;
-        }
-
-        .t1ban:last-child {
-            border-right: none;
+            display: none;
         }
 
         /* Data table */
@@ -1033,13 +1044,65 @@ $educMap = [
             background: #fff;
         }
 
+        /* Section separators — bold borders between A, B, C */
+        .t1 tr:nth-child(n+1) td:nth-child(3),
+        .t1 tr:nth-child(n+1) td:nth-child(5) {
+            border-left: 2px solid #111 !important;
+        }
+
+        .t1 tr:first-child td:nth-child(3),
+        .t1 tr:first-child td:nth-child(5) {
+            border-left: 2px solid #111 !important;
+            border-right: 1px solid #111 !important;
+        }
+
         .t1ch {
             font-weight: 700;
             font-size: 10px;
             text-align: center;
             vertical-align: middle;
             line-height: 1.3;
-            padding: 5px 4px;
+            padding: 8px 4px;
+            min-height: auto;
+            height: auto;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: break-word;
+            overflow: hidden;
+            display: table-cell;
+            white-space: normal;
+        }
+
+        /* Tall header columns - 70px height with rowspan="2" */
+        .t1ch-tall {
+            min-height: 70px;
+            height: 70px;
+            padding: 12px 4px;
+            vertical-align: middle;
+        }
+
+        /* Header cell for "Number of incumbent" */
+        .t1ch-number-header {
+            min-height: 35px;
+            height: 35px;
+            padding: 6px 4px;
+            vertical-align: middle;
+            font-weight: 700;
+            font-size: 10px;
+            text-align: center;
+            line-height: 1.3;
+            border-bottom: none !important;
+        }
+
+        /* Sub-header cells for "Teaching" and "Non-Teaching" */
+        .t1ch-teaching {
+            font-weight: 700;
+            font-size: 10px;
+            padding: 6px 4px;
+            height: 35px;
+            text-align: center;
+            vertical-align: middle;
+            border-top: 1px solid #111;
         }
 
         .t1chlt {
@@ -1048,6 +1111,10 @@ $educMap = [
             display: block;
             margin-top: 2px;
             font-style: italic;
+            line-height: 1.2;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: break-word;
         }
 
         .t1dr td {
@@ -1104,7 +1171,78 @@ $educMap = [
             font-size: 6.8px;
             color: #000;
             background: #fff;
-            table-layout: fixed;
+            table-layout: auto;
+        }
+
+        /* Define column widths for proper layout - EXACT SEQUENCE */
+        .sf7t .c-id {
+            width: 65px;
+            min-width: 65px;
+        }
+
+        .sf7t .c-nm {
+            width: 110px;
+            min-width: 110px;
+        }
+
+        .sf7t .c-sx {
+            width: 45px;
+            min-width: 45px;
+        }
+
+        .sf7t .c-fd {
+            width: 60px;
+            min-width: 60px;
+        }
+
+        .sf7t .c-pos {
+            width: 70px;
+            min-width: 70px;
+        }
+
+        .sf7t .c-ap {
+            width: 85px;
+            min-width: 85px;
+        }
+
+        .sf7t .c-ed {
+            width: 55px;
+            min-width: 55px;
+        }
+
+        .sf7t .c-sb {
+            width: 100px;
+            min-width: 100px;
+        }
+
+        .sf7t .c-gr {
+            width: 32px;
+            min-width: 32px;
+        }
+
+        .sf7t .c-sec {
+            width: 70px;
+            min-width: 70px;
+        }
+
+        .sf7t .c-day {
+            width: 28px;
+            min-width: 28px;
+        }
+
+        .sf7t .c-tm {
+            width: 70px;
+            min-width: 70px;
+        }
+
+        .sf7t .c-mn {
+            width: 50px;
+            min-width: 50px;
+        }
+
+        .sf7t .c-act {
+            width: 50px;
+            min-width: 50px;
         }
 
         .sf7t td {
@@ -1154,14 +1292,17 @@ $educMap = [
             white-space: nowrap;
             overflow: hidden;
             font-weight: 600;
+            padding: 2px 1px !important;
+            vertical-align: middle;
         }
 
         .sf7t .c-nm {
             font-weight: 700;
             font-size: 6.8px;
             text-transform: uppercase;
-            vertical-align: top;
-            padding-top: 2px !important;
+            text-align: center;
+            vertical-align: middle;
+            padding: 2px 2px !important;
             line-height: 1.25;
             word-break: break-word;
         }
@@ -1171,6 +1312,8 @@ $educMap = [
             font-size: 6.8px;
             text-transform: uppercase;
             font-weight: 600;
+            padding: 2px 1px !important;
+            vertical-align: middle;
         }
 
         .sf7t .c-fd {
@@ -1178,38 +1321,54 @@ $educMap = [
             font-size: 6.5px;
             text-transform: uppercase;
             font-weight: 600;
+            padding: 2px 1px !important;
+            vertical-align: middle;
         }
 
         .sf7t .c-pos {
             font-weight: 700;
             font-size: 6.5px;
             text-transform: uppercase;
+            text-align: center;
             line-height: 1.25;
             word-break: break-word;
+            padding: 2px 1px !important;
+            vertical-align: middle;
         }
 
         .sf7t .c-ap {
             font-size: 6.2px;
             text-transform: uppercase;
+            text-align: center;
             line-height: 1.2;
             word-break: break-word;
+            padding: 2px 1px !important;
+            vertical-align: middle;
         }
 
         .sf7t .c-ed {
             font-size: 6.2px;
+            text-align: center;
             line-height: 1.2;
+            padding: 2px 1px !important;
+            vertical-align: middle;
         }
 
         .sf7t .c-mj {
             font-weight: 600;
             font-size: 6.5px;
             text-transform: uppercase;
+            text-align: center;
             line-height: 1.3;
+            padding: 2px 1px !important;
+            vertical-align: middle;
         }
 
         .sf7t .c-adv {
             text-align: center;
             font-size: 7px;
+            padding: 2px 1px !important;
+            vertical-align: middle;
         }
 
         .sf7t .c-sb {
@@ -1217,16 +1376,24 @@ $educMap = [
             font-weight: 600;
             line-height: 1.25;
             text-transform: uppercase;
+            text-align: center;
+            padding: 2px 1px !important;
+            vertical-align: middle;
         }
 
         .sf7t .c-gr {
             text-align: center;
             font-size: 7px;
             font-weight: 700;
+            padding: 2px 1px !important;
+            vertical-align: middle;
         }
 
         .sf7t .c-sec {
             font-size: 7px;
+            text-align: center;
+            padding: 2px 1px !important;
+            vertical-align: middle;
         }
 
         .sf7t .c-day {
@@ -1234,6 +1401,7 @@ $educMap = [
             font-size: 7px;
             font-weight: 700;
             padding: 1px !important;
+            vertical-align: middle;
         }
 
         .sf7t .c-tm {
@@ -1241,24 +1409,51 @@ $educMap = [
             font-size: 7px;
             white-space: nowrap;
             font-weight: 600;
+            padding: 2px 1px !important;
+            vertical-align: middle;
         }
 
         .sf7t .c-mn {
-            text-align: right;
+            text-align: center;
             font-size: 7px;
             font-weight: 700;
-            padding-right: 4px !important;
+            padding-right: 2px !important;
+            padding-left: 1px !important;
+            vertical-align: middle;
         }
 
         .sf7t .c-act {
             text-align: center;
             white-space: nowrap;
-            padding: 2px !important;
+            padding: 1px !important;
+            vertical-align: middle;
         }
 
         /* Thick top border between persons — matches PDF group separator */
         .sf7t .pfirst td {
             border-top: 2px solid #000 !important;
+            height: 26px;
+            line-height: 1.3;
+        }
+
+        .sf7t .pfirst .c-id,
+        .sf7t .pfirst .c-nm,
+        .sf7t .pfirst .c-sx,
+        .sf7t .pfirst .c-fd,
+        .sf7t .pfirst .c-pos,
+        .sf7t .pfirst .c-ap,
+        .sf7t .pfirst .c-ed,
+        .sf7t .pfirst .c-mj,
+        .sf7t .pfirst .c-adv,
+        .sf7t .pfirst .c-sb,
+        .sf7t .pfirst .c-gr,
+        .sf7t .pfirst .c-sec,
+        .sf7t .pfirst .c-day,
+        .sf7t .pfirst .c-tm,
+        .sf7t .pfirst .c-mn,
+        .sf7t .pfirst .c-act {
+            padding: 3px 2px;
+            vertical-align: middle;
         }
 
         /* Total row per person */
@@ -1296,6 +1491,7 @@ $educMap = [
             font-size: 7px;
             padding: 2px 3px;
             border: 0.75px solid #333;
+            height: 20px;
         }
 
         /* Action buttons */
@@ -2395,48 +2591,46 @@ $educMap = [
 
                     </table><!-- /.t1htable -->
 
-                    <!-- ── Banner row: (A) (B) (C) ── -->
-                    <div class="t1banrow">
-                        <div class="t1ban" style="flex:0 0 264px;">
-                            (A) Nationally-Funded Teaching &amp; Teaching Related Items
-                        </div>
-                        <div class="t1ban" style="flex:0 0 254px;">
-                            (B) Nationally-Funded <u>Non Teaching</u> Items
-                        </div>
-                        <div class="t1ban" style="flex:1;">
-                            (C) Other Appointments and Funding Source
-                        </div>
-                    </div>
-
                     <!-- ── Data table: column headers + data rows ── -->
                     <table class="t1">
                         <colgroup>
-                            <col style="width:90px">
                             <col style="width:175px">
                             <col style="width:80px">
                             <col style="width:175px">
                             <col style="width:80px">
-                            <col style="width:145px">
+                            <col style="width:200px">
                             <col style="width:155px">
-                            <col style="width:95px">
-                            <col style="width:72px">
-                            <col style="width:88px">
+                            <col style="width:110px">
+                            <col style="width:80px">
+                            <col style="width:80px">
                             <col class="no-print" style="width:82px">
                         </colgroup>
-                        <tr>
-                            <td colspan="2" class="t1ch" rowspan="2">Title of Plantilla Position<span class="t1chlt">(as it appears in the appointment document/PSIPOP)</span></td>
-                            <td class="t1ch" rowspan="2">No. of<br>Incumbent</td>
-                            <td class="t1ch" rowspan="2">Title of Plantilla Position<span class="t1chlt">(as it appears in the appointment document/PSIPOP)</span></td>
-                            <td class="t1ch" rowspan="2">No. of<br>Incumbent</td>
-                            <td class="t1ch" rowspan="2">Title of Plantilla Position<span class="t1chlt">(as it appears in the contract/document Teacher, Clerk, Security, Guard, Driver, Etc.)</span></td>
-                            <td class="t1ch" rowspan="2">Appointment<span class="t1chlt">(Contractual, Substitute, Volunteer, others specify)</span></td>
-                            <td class="t1ch" rowspan="2">Fund Source<span class="t1chlt">(SEF, PTA, NGO's, etc.)</span></td>
-                            <td class="t1ch" colspan="2">Number of incumbent</td>
-                            <td class="t1ch no-print" rowspan="2">Actions</td>
+
+                        <!-- Row 1: Main section headers (A), (B), (C) -->
+                        <tr style="border-bottom: 2px solid #111;">
+                            <td colspan="2" class="t1ch" style="border-right: 2px solid #111; background: #f0f0f0; font-weight: 800; font-size: 11px; padding: 8px 4px;">(A) Nationally-Funded Teaching &amp; Teaching Related Items</td>
+                            <td colspan="2" class="t1ch" style="border-right: 2px solid #111; background: #f0f0f0; font-weight: 800; font-size: 11px; padding: 8px 4px;">(B) Nationally-Funded Non Teaching Items</td>
+                            <td colspan="5" class="t1ch" style="background: #f0f0f0; font-weight: 800; font-size: 11px; padding: 8px 4px;">(C) Other Appointments and Funding Source</td>
                         </tr>
+
+                        <!-- Row 2: All column headers at SAME HEIGHT (70px) -->
                         <tr>
-                            <td class="t1ch">Teaching</td>
-                            <td class="t1ch">Non-<br>Teaching</td>
+                            <td class="t1ch t1ch-tall" rowspan="2">Title of Plantilla Position<span class="t1chlt">(as it appears in the appointment document/PSIPOP)</span></td>
+                            <td class="t1ch t1ch-tall" rowspan="2">Number of<br>Incumbent</td>
+                            <td class="t1ch t1ch-tall" rowspan="2">Title of Plantilla Position<span class="t1chlt">(as it appears in the appointment document/PSIPOP)</span></td>
+                            <td class="t1ch t1ch-tall" rowspan="2">Number of<br>Incumbent</td>
+                            <td class="t1ch t1ch-tall" rowspan="2">Title of Plantilla Position<span class="t1chlt">(as it appears in the contract/document Teacher, Clerk, Security, Guard, Driver, Etc.)</span></td>
+                            <td class="t1ch t1ch-tall" rowspan="2">Appointment<span class="t1chlt">(Contractual, Substitute, Volunteer, others specify)</span></td>
+                            <td class="t1ch t1ch-tall" rowspan="2">Fund Source<span class="t1chlt">(SEF, PTA, NGO's, etc.)</span></td>
+                            <td class="t1ch-number-header" colspan="2" style="border-right: none;">Number of incumbent</td>
+                            <td class="t1ch t1ch-tall no-print" rowspan="2" style="border-left: none;">Actions</td>
+                        </tr>
+
+                        <!-- Row 3: Only Teaching/Non-Teaching sub-headers (bottom section) -->
+                        <tr>
+                            <td class="t1ch-teaching">Teaching</td>
+                            <td class="t1ch-teaching">Non-<br>Teaching</td>
+                            <td class="no-print"></td>
                         </tr>
 
                         <?php
@@ -2449,13 +2643,13 @@ $educMap = [
                             $nt = $ntList[$ri] ?? null;
                         ?>
                             <tr class="t1dr">
-                                <td colspan="2" class="t1pos"><?= h($aT) ?></td>
+                                <td class="t1pos"><?= h($aT) ?></td>
                                 <td class="t1num"><?= $aC ?></td>
-                                <td></td>
-                                <td></td>
                                 <td class="t1pos"><?= $nt ? h($nt['nt_position'] ?: $nt['career_level']) : '' ?></td>
-                                <td class="t1appt"><?= $nt ? h($nt['nt_appt_type'] ?: $nt['employment_status']) : '' ?></td>
-                                <td class="t1fund"><?= $nt ? h($nt['nt_fund_source'] ?: $nt['funding_source']) : '' ?></td>
+                                <td class="t1num"><?= $nt ? 1 : '' ?></td>
+                                <td class="t1pos"></td>
+                                <td class="t1appt"></td>
+                                <td class="t1fund"></td>
                                 <td class="t1num"><?= $aC && !in_array($aT, array_column($nonTeaching, 'career_level')) ? $aC : '' ?></td>
                                 <td class="t1num"><?= $nt ? 1 : '' ?></td>
                                 <td class="no-print"></td>
@@ -2463,7 +2657,7 @@ $educMap = [
                         <?php endfor; ?>
                         <?php for ($x = 0; $x < 3; $x++): ?>
                             <tr class="t1dr">
-                                <td colspan="2"></td>
+                                <td></td>
                                 <td></td>
                                 <td></td>
                                 <td></td>
@@ -2476,7 +2670,7 @@ $educMap = [
                             </tr>
                         <?php endfor; ?>
                         <tr class="t1tot">
-                            <td colspan="2" style="text-align:center;">TOTAL</td>
+                            <td style="text-align:center;">TOTAL</td>
                             <td class="t1num"><?= array_sum($t1Pos) ?></td>
                             <td></td>
                             <td class="t1num">0</td>
@@ -2623,7 +2817,7 @@ $educMap = [
                         <?php endforeach; ?>
                         <!-- Total row for principal -->
                         <tr class="ptot">
-                            <td colspan="21" style="text-align:right;padding-right:8px;">Total</td>
+                            <td colspan="22" style="text-align:right;padding-right:8px;">Total</td>
                             <td class="c-mn"><?= $pMins ?: 0 ?></td>
                             <td class="no-print"></td>
                         </tr>
@@ -2646,23 +2840,9 @@ $educMap = [
                         $tFund = strtoupper($t['funding_source'] ?: 'NATIONAL');
 
                         $tSch  = getScheds($conn, $t['teacher_id'], 'teacher');
-                        // Fall back to legacy single-row fields
+                        // Show one blank row when no schedule entries exist yet
                         if (empty($tSch)) {
-                            $tSch = [[
-                                'subject'    => $t['subject_assigned'] ?: '',
-                                'grade'      => '',
-                                'section'    => $t['grade_section'] ?: '',
-                                'day_mon'    => $t['day_mon']    ?? 0,
-                                'day_tue'    => $t['day_tue']    ?? 0,
-                                'day_wed'    => $t['day_wed']    ?? 0,
-                                'day_thu'    => $t['day_thu']    ?? 0,
-                                'day_fri'    => $t['day_fri']    ?? 0,
-                                'day_sat'    => 0,
-                                'day_sun'    => 0,
-                                'time_start' => $t['time_start'] ?? '',
-                                'time_end'   => $t['time_end']   ?? '',
-                                'minutes'    => 0,
-                            ]];
+                            $tSch = [['subject' => '', 'grade' => '', 'section' => '', 'day_mon' => 0, 'day_tue' => 0, 'day_wed' => 0, 'day_thu' => 0, 'day_fri' => 0, 'day_sat' => 0, 'day_sun' => 0, 'time_start' => '', 'time_end' => '', 'minutes' => 0]];
                         }
                         $tCnt  = count($tSch);
                         $tMins = array_sum(array_column($tSch, 'minutes'));
@@ -2721,7 +2901,7 @@ $educMap = [
                         <?php endforeach; ?>
                         <!-- Total row per teacher -->
                         <tr class="ptot">
-                            <td colspan="21" style="text-align:right;padding-right:8px;">Total</td>
+                            <td colspan="22" style="text-align:right;padding-right:8px;">Total</td>
                             <td class="c-mn"><?= $tMins ?: '' ?></td>
                             <td class="no-print"></td>
                         </tr>
@@ -2734,32 +2914,29 @@ $educMap = [
             <div class="sscroll" style="padding-top:8px;padding-bottom:20px;">
                 <table class="sf7t">
                     <colgroup>
-                        <col style="width:55px"> <!-- EmpNo -->
-                        <col style="width:95px"> <!-- Name -->
-                        <col style="width:30px"> <!-- Sex -->
-                        <col style="width:45px"> <!-- Fund -->
-                        <col style="width:95px"> <!-- Position -->
-                        <col style="width:65px"> <!-- ApptStatus -->
-                        <col style="width:80px"> <!-- Educ -->
-                        <col style="width:70px"> <!-- Major -->
-                        <col style="width:50px"> <!-- Advisory -->
-                        <col style="width:80px"> <!-- Subject -->
-                        <col style="width:22px"> <!-- Gr -->
-                        <col style="width:55px"> <!-- Section -->
-                        <col style="width:15px"> <!-- M -->
-                        <col style="width:15px"> <!-- T -->
-                        <col style="width:15px"> <!-- W -->
-                        <col style="width:18px"> <!-- TH -->
-                        <col style="width:15px"> <!-- F -->
-                        <col style="width:18px"> <!-- SAT -->
-                        <col style="width:18px"> <!-- SUN -->
-                        <col style="width:50px"> <!-- TimeStart -->
-                        <col style="width:50px"> <!-- TimeEnd -->
-                        <col style="width:30px"> <!-- Mins -->
-                        <col class="no-print" style="width:50px"> <!-- Actions -->
+                        <col style="width:45px"> <!-- EmpNo -->
+                        <col style="width:85px"> <!-- Name -->
+                        <col style="width:28px"> <!-- Sex -->
+                        <col style="width:40px"> <!-- Fund -->
+                        <col style="width:85px"> <!-- Position -->
+                        <col style="width:60px"> <!-- ApptStatus -->
+                        <col style="width:70px"> <!-- Subject -->
+                        <col style="width:20px"> <!-- Gr -->
+                        <col style="width:50px"> <!-- Section -->
+                        <col style="width:14px"> <!-- M -->
+                        <col style="width:14px"> <!-- T -->
+                        <col style="width:14px"> <!-- W -->
+                        <col style="width:16px"> <!-- TH -->
+                        <col style="width:14px"> <!-- F -->
+                        <col style="width:16px"> <!-- SAT -->
+                        <col style="width:16px"> <!-- SUN -->
+                        <col style="width:45px"> <!-- TimeStart -->
+                        <col style="width:45px"> <!-- TimeEnd -->
+                        <col style="width:28px"> <!-- Mins -->
+                        <col class="no-print" style="width:45px"> <!-- Actions -->
                     </colgroup>
                     <tr class="nt-hdr">
-                        <td colspan="23">JOB ORDER / CONTRACT OF SERVICE PERSONNEL</td>
+                        <td colspan="20">JOB ORDER / CONTRACT OF SERVICE PERSONNEL</td>
                     </tr>
                     <tr class="nt-ch">
                         <td>ID</td>
@@ -2767,7 +2944,6 @@ $educMap = [
                         <td>Sex</td>
                         <td>Fund Source</td>
                         <td>Position / Role</td>
-                        <td>Appt Type</td>
                         <td>Appt Type</td>
                         <td>Subject</td>
                         <td>Gr</td>
@@ -2782,8 +2958,6 @@ $educMap = [
                         <td>Time<br>Start</td>
                         <td>Time<br>End</td>
                         <td>Mins</td>
-                        <td></td>
-                        <td></td>
                         <td class="no-print"></td>
                     </tr>
                     <?php foreach ($nonTeaching as $nt): ?>
@@ -2798,8 +2972,8 @@ $educMap = [
                             <td class="c-sx"><?= h($nt['gender']) ?></td>
                             <td class="c-fd"><?= h($nt['nt_fund_source'] ?: $nt['funding_source']) ?></td>
                             <td class="c-pos"><?= h($nt['nt_position'] ?: $nt['career_level']) ?></td>
-                            <td colspan="2" class="c-ap"><?= h($nt['nt_appt_type'] ?: $nt['employment_status']) ?></td>
-                            <td colspan="15" style="font-size:7.5px;"><?= h($nt['subject_assigned'] ?: $nt['club_role'] ?: 'General Duty — M T W TH F') ?></td>
+                            <td class="c-ap"><?= h($nt['nt_appt_type'] ?: $nt['employment_status']) ?></td>
+                            <td colspan="14" style="font-size:7.5px;"><?= h($nt['subject_assigned'] ?: $nt['club_role'] ?: 'General Duty — M T W TH F') ?></td>
                             <td class="c-act no-print">
                                 <a href="#" class="ab e"
                                     data-type="teacher" data-rid="<?= $nt['id'] ?>"

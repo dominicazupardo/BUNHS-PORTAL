@@ -8,6 +8,7 @@ nixPkgs = [
   "php82Extensions.gd",
   "php82Extensions.curl",
   "php82Extensions.zip",
+  "php82Extensions.mysqlnd",
   "composer"
 ]
 
@@ -16,11 +17,5 @@ cmds = [
   "composer install --no-dev --optimize-autoloader --no-interaction"
 ]
 
-[phases.build]
-cmds = [
-  "php82 -m | grep mysqli",
-  "php82 -m | grep pdo_mysql"
-]
-
 [start]
-cmd = "php82 -S 0.0.0.0:$PORT index.php"
+cmd = "php82 -S 0.0.0.0:$PORT -t ."

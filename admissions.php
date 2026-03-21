@@ -4,18 +4,21 @@
 <head>
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
-    <title>Admissions - MySchool Bootstrap Template</title>
-    <meta name="description" content="">
-    <meta name="keywords" content="">
+    <title>Admissions - Buyoan National High School</title>
+    <meta name="description" content="Learn about our admissions process, requirements, and important dates for Grade 7 enrollment at Buyoan National High School.">
+    <meta name="keywords" content="BUNHS admissions, Buyoan National High School enrollment, Grade 7 admission">
 
     <!-- Favicons -->
     <link href="assets/img/favicon.png" rel="icon">
     <link href="assets/img/apple-touch-icon.png" rel="apple-touch-icon">
 
-    <!-- Fonts -->
+    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com" rel="preconnect">
     <link href="https://fonts.gstatic.com" rel="preconnect" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Raleway:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet">
+
+    <!-- Font Awesome -->
+    <script src="https://kit.fontawesome.com/4ffbd94408.js" crossorigin="anonymous"></script>
 
     <!-- Vendor CSS Files -->
     <link href="assets/vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
@@ -25,33 +28,19 @@
 
     <!-- Main CSS File -->
     <link href="assets/css/main.css" rel="stylesheet">
-
-    <!-- =======================================================
-  * Template Name: MySchool
-  * Template URL: https://bootstrapmade.com/myschool-bootstrap-school-template/
-  * Updated: Jul 28 2025 with Bootstrap v5.3.7
-  * Author: BootstrapMade.com
-  * License: https://bootstrapmade.com/license/
-  ======================================================== -->
 </head>
 
 <body class="admissions-page">
 
     <header id="header" class="header d-flex align-items-center sticky-top">
         <div class="container-fluid container-xl position-relative d-flex align-items-center justify-content-between">
-
-            <a href="index.html" class="logo d-flex align-items-center">
-                <!-- School Logo -->
+            <a href="index.php" class="logo d-flex align-items-center">
                 <img src="assets/img/Bagong_Pilipinas_logo.png" alt="School Logo" class="me-2" style="height: 85px; width: auto; border-radius: 20px;">
-                <img src="assets/img/DepED logo circle.png" alt="School Logo" class="me-2" style="height: 85px; width: auto; border-radius: 0px;">
+                <img src="assets/img/DepED_logo_circle.png" alt="School Logo" class="me-2" style="height: 85px; width: auto; border-radius: 0px;">
                 <img src="assets/img/logo.jpg" alt="School Logo" class="me-2" style="height: 85px; width: auto; border-radius: 50px;">
-
-                <!-- School Name -->
                 <h4 class="sitename mb-0">Buyoan National HighSchool</h4>
             </a>
-
             <div id="nav-placeholder"></div>
-
         </div>
     </header>
 
@@ -65,7 +54,7 @@
                         <div class="col-lg-8">
                             <h1 class="heading-title">Admissions</h1>
                             <p class="mb-0">
-                                Admission is now open! Join our school community and take the first step toward a brighter future. Submit your requirements and start your learning journey with us.
+                                Join Buyoan National High School — Discover our simple, transparent Grade 7 admissions process designed to welcome every qualified student into our vibrant learning community.
                             </p>
                         </div>
                     </div>
@@ -74,7 +63,8 @@
             <nav class="breadcrumbs">
                 <div class="container">
                     <ol>
-                        <li><a href="index.html">Home</a></li>
+                        <li><a href="index.php">Home</a></li>
+                        <li><a href="about.php">About</a></li>
                         <li class="current">Admissions</li>
                     </ol>
                 </div>
@@ -83,325 +73,192 @@
 
         <!-- Admissions Section -->
         <section id="admissions" class="admissions section">
-
             <div class="container">
 
-                <div class="admission-hero">
-                    <div class="row align-items-center">
-                        <div class="col-lg-8">
-                            <div class="hero-content">
-                                <h2>Begin Your Academic Journey</h2>
-                                <p>Discover a transformative educational experience where innovation meets tradition. Our admissions process is designed to identify passionate learners ready to make their mark on the world.</p>
-                                <div class="hero-stats">
-                                    <div class="stat-item">
-                                        <span class="stat-number">89%</span>
-                                        <span class="stat-label">Acceptance Rate</span>
+                <div class="row gy-5">
+                    <div class="col-lg-8">
+                        <div class="admissions-content">
+                            <h3 class="section-subtitle">Grade 7 Admissions (Junior High School)</h3>
+
+                            <!-- Admissions Process Steps -->
+                            <div class="process-steps">
+                                <div class="step-item active">
+                                    <div class="step-number">1</div>
+                                    <div class="step-content">
+                                        <h4>Online Application</h4>
+                                        <p>Complete our simple online form with basic information. No application fee required.</p>
                                     </div>
-                                    <div class="stat-item">
-                                        <span class="stat-number">$28K</span>
-                                        <span class="stat-label">Average Financial Aid</span>
+                                </div>
+                                <div class="step-item">
+                                    <div class="step-number">2</div>
+                                    <div class="step-content">
+                                        <h4>Document Submission</h4>
+                                        <p>Upload or bring required documents including report card, birth certificate, and good moral certificate.</p>
                                     </div>
-                                    <div class="stat-item">
-                                        <span class="stat-number">15:1</span>
-                                        <span class="stat-label">Student-Faculty Ratio</span>
+                                </div>
+                                <div class="step-item">
+                                    <div class="step-number">3</div>
+                                    <div class="step-content">
+                                        <h4>Interview & Assessment</h4>
+                                        <p>Short interview with guidance counselor and basic academic assessment.</p>
+                                    </div>
+                                </div>
+                                <div class="step-item">
+                                    <div class="step-number">4</div>
+                                    <div class="step-content">
+                                        <h4>Acceptance & Enrollment</h4>
+                                        <p>Receive acceptance letter and complete enrollment with payment of fees.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Requirements -->
+                            <div class="requirements mt-5">
+                                <h4>Required Documents</h4>
+                                <div class="requirements-grid">
+                                    <div class="requirement-item">
+                                        <i class="bi bi-file-earmark-text"></i>
+                                        <div>
+                                            <h6>Form 138 / Report Card</h6>
+                                            <p>Grade 6 card with complete quarters</p>
+                                        </div>
+                                    </div>
+                                    <div class="requirement-item">
+                                        <i class="bi bi-file-person"></i>
+                                        <div>
+                                            <h6>NSO/PSA Birth Certificate</h6>
+                                            <p>Original and photocopy</p>
+                                        </div>
+                                    </div>
+                                    <div class="requirement-item">
+                                        <i class="bi bi-award"></i>
+                                        <div>
+                                            <h6>Good Moral Certificate</h6>
+                                            <p>From elementary school</p>
+                                        </div>
+                                    </div>
+                                    <div class="requirement-item">
+                                        <i class="bi bi-people"></i>
+                                        <div>
+                                            <h6>2 pcs 1x1 Picture</h6>
+                                            <p>Recent, white background</p>
+                                        </div>
+                                    </div>
+                                    <div class="requirement-item">
+                                        <i class="bi bi-house-door"></i>
+                                        <div>
+                                            <h6>Barangay Clearance</h6>
+                                            <p>From your barangay</p>
+                                        </div>
+                                    </div>
+                                    <div class="requirement-item">
+                                        <i class="bi bi-clipboard-check"></i>
+                                        <div>
+                                            <h6>Medical Certificate</h6>
+                                            <p>General health check-up</p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-lg-4">
-                            <div class="hero-image">
-                                <img src="assets/img/education/students-3.webp" class="img-fluid" alt="Students">
-                                <div class="floating-badge">
-                                    <i class="bi bi-mortarboard"></i>
-                                    <span>Join 12,000+ Alumni</span>
+                    </div>
+
+                    <div class="col-lg-4">
+                        <div class="admissions-sidebar">
+                            <div class="sidebar-widget">
+                                <h4>Important Dates</h4>
+                                <div class="timeline-item">
+                                    <div class="date">January 5</div>
+                                    <div class="event">Application Opens</div>
                                 </div>
+                                <div class="timeline-item">
+                                    <div class="date">March 15</div>
+                                    <div class="event">Deadline for Complete Documents</div>
+                                </div>
+                                <div class="timeline-item">
+                                    <div class="date">March 20-25</div>
+                                    <div class="event">Interviews & Testing</div>
+                                </div>
+                                <div class="timeline-item">
+                                    <div class="date">April 1</div>
+                                    <div class="event">Acceptance Letters Released</div>
+                                </div>
+                                <div class="timeline-item">
+                                    <div class="date">April 5-10</div>
+                                    <div class="event">Enrollment Period</div>
+                                </div>
+                            </div>
+
+                            <div class="sidebar-widget contact-widget mt-4">
+                                <h4>Admissions Office</h4>
+                                <p><strong>📞 Phone:</strong> 0985-072-2808</p>
+                                <p><strong>📧 Email:</strong> admissions@bunhs.edu.ph</p>
+                                <p><strong>⏰ Hours:</strong> Mon-Fri, 8AM-4PM</p>
+                                <a href="contact.php" class="btn btn-primary w-100">Contact Us</a>
+                            </div>
+
+                            <div class="sidebar-widget cta-widget mt-4">
+                                <h5>Ready to Apply?</h5>
+                                <p class="small">Spaces are limited. Apply early!</p>
+                                <a href="#" class="btn btn-success w-100 btn-lg" data-bs-toggle="modal" data-bs-target="#signupModal">
+                                    Start Application <i class="fas fa-arrow-right"></i>
+                                </a>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="application-timeline">
-                    <div class="timeline-header">
-                        <h3>Application Process</h3>
-                        <p>Four simple steps to start your journey with us</p>
-                    </div>
-                    <div class="timeline-container">
-                        <div class="timeline-item">
-                            <div class="timeline-marker">
-                                <i class="bi bi-file-earmark-text"></i>
-                            </div>
-                            <div class="timeline-content">
-                                <h4>Submit Application</h4>
-                                <p>Mauris blandit aliquet elit, eget tincidunt nibh pulvinar a. Sed porttitor lectus nibh. Vivamus magna justo, lacinia eget consectetur sed.</p>
-                                <span class="timeline-duration">2-3 days</span>
-                            </div>
-                        </div>
-                        <div class="timeline-item">
-                            <div class="timeline-marker">
-                                <i class="bi bi-files"></i>
-                            </div>
-                            <div class="timeline-content">
-                                <h4>Document Review</h4>
-                                <p>Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Donec rutrum congue leo eget malesuada.</p>
-                                <span class="timeline-duration">5-7 days</span>
-                            </div>
-                        </div>
-                        <div class="timeline-item">
-                            <div class="timeline-marker">
-                                <i class="bi bi-chat-dots"></i>
-                            </div>
-                            <div class="timeline-content">
-                                <h4>Assessment Interview</h4>
-                                <p>Cras ultricies ligula sed magna dictum porta. Nulla porttitor accumsan tincidunt. Proin eget tortor risus.</p>
-                                <span class="timeline-duration">1-2 weeks</span>
-                            </div>
-                        </div>
-                        <div class="timeline-item">
-                            <div class="timeline-marker">
-                                <i class="bi bi-check-circle"></i>
-                            </div>
-                            <div class="timeline-content">
-                                <h4>Final Decision</h4>
-                                <p>Vestibulum ac diam sit amet quam vehicula elementum sed sit amet dui. Curabitur arcu erat, accumsan id imperdiet et.</p>
-                                <span class="timeline-duration">2-3 weeks</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="row gy-5 mt-4">
-                    <div class="col-lg-6">
-                        <div class="requirements-checklist">
-                            <h3>Admission Requirements</h3>
-                            <div class="checklist-grid">
-                                <div class="checklist-item">
-                                    <div class="check-icon">
-                                        <i class="bi bi-check2"></i>
-                                    </div>
-                                    <div class="check-content">
-                                        <h5>Academic Transcripts</h5>
-                                        <p>Official high school or college records</p>
-                                    </div>
-                                </div>
-                                <div class="checklist-item">
-                                    <div class="check-icon">
-                                        <i class="bi bi-check2"></i>
-                                    </div>
-                                    <div class="check-content">
-                                        <h5>Standardized Tests</h5>
-                                        <p>SAT, ACT, or equivalent scores</p>
-                                    </div>
-                                </div>
-                                <div class="checklist-item">
-                                    <div class="check-icon">
-                                        <i class="bi bi-check2"></i>
-                                    </div>
-                                    <div class="check-content">
-                                        <h5>Personal Statement</h5>
-                                        <p>500-800 word essay on your goals</p>
-                                    </div>
-                                </div>
-                                <div class="checklist-item">
-                                    <div class="check-icon">
-                                        <i class="bi bi-check2"></i>
-                                    </div>
-                                    <div class="check-content">
-                                        <h5>Recommendation Letters</h5>
-                                        <p>Two letters from academic references</p>
-                                    </div>
-                                </div>
-                                <div class="checklist-item">
-                                    <div class="check-icon">
-                                        <i class="bi bi-check2"></i>
-                                    </div>
-                                    <div class="check-content">
-                                        <h5>Portfolio (if applicable)</h5>
-                                        <p>For art, design, and creative programs</p>
-                                    </div>
-                                </div>
-                                <div class="checklist-item">
-                                    <div class="check-icon">
-                                        <i class="bi bi-check2"></i>
-                                    </div>
-                                    <div class="check-content">
-                                        <h5>Application Fee</h5>
-                                        <p>$75 processing fee (waived for qualified students)</p>
+                <!-- Admissions FAQ -->
+                <div class="row mt-5">
+                    <div class="col-12">
+                        <h3 class="section-subtitle text-center mb-5">Frequently Asked Questions</h3>
+                        <div class="accordion" id="admissionsFAQ">
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
+                                        What is the admission criteria for Grade 7?
+                                    </button>
+                                </h2>
+                                <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#admissionsFAQ">
+                                    <div class="accordion-body">
+                                        Admission is based on completing Grade 6, passing grades (at least 80% average), complete documents, and passing the interview/assessment. We welcome students from all elementary schools.
                                     </div>
                                 </div>
                             </div>
-                            <div class="international-note">
-                                <i class="bi bi-globe"></i>
-                                <div>
-                                    <h6>International Students</h6>
-                                    <p>Additional requirements include English proficiency scores (TOEFL/IELTS) and visa documentation.</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="col-lg-6">
-                        <div class="tuition-overview">
-                            <h3>Investment in Your Future</h3>
-                            <div class="tuition-cards">
-                                <div class="tuition-card domestic">
-                                    <div class="card-header">
-                                        <h4>Domestic Students</h4>
-                                        <span class="program-type">Per Academic Year</span>
-                                    </div>
-                                    <div class="pricing-details">
-                                        <div class="price-item">
-                                            <span class="label">Undergraduate Tuition</span>
-                                            <span class="amount">$34,200</span>
-                                        </div>
-                                        <div class="price-item">
-                                            <span class="label">Graduate Programs</span>
-                                            <span class="amount">$41,800</span>
-                                        </div>
-                                        <div class="price-item">
-                                            <span class="label">Room &amp; Board</span>
-                                            <span class="amount">$14,500</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="tuition-card international">
-                                    <div class="card-header">
-                                        <h4>International Students</h4>
-                                        <span class="program-type">Per Academic Year</span>
-                                    </div>
-                                    <div class="pricing-details">
-                                        <div class="price-item">
-                                            <span class="label">Undergraduate Tuition</span>
-                                            <span class="amount">$44,700</span>
-                                        </div>
-                                        <div class="price-item">
-                                            <span class="label">Graduate Programs</span>
-                                            <span class="amount">$52,300</span>
-                                        </div>
-                                        <div class="price-item">
-                                            <span class="label">Room &amp; Board</span>
-                                            <span class="amount">$14,500</span>
-                                        </div>
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
+                                        Is there an entrance exam?
+                                    </button>
+                                </h2>
+                                <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#admissionsFAQ">
+                                    <div class="accordion-body">
+                                        Yes, a short diagnostic test in English, Math, and Filipino (45 minutes). Practice materials available upon request.
                                     </div>
                                 </div>
                             </div>
-                            <div class="financial-support">
-                                <h5>Financial Support Available</h5>
-                                <p>Over 80% of students receive financial assistance through scholarships, grants, and work-study programs. Merit scholarships range from $8,000 to full tuition coverage.</p>
-                                <a href="#" class="support-link">Explore Financial Aid Options <i class="bi bi-arrow-right"></i></a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="deadlines-showcase mt-5">
-                    <div class="showcase-header">
-                        <h3>Key Dates &amp; Deadlines</h3>
-                        <p>Stay on track with these important milestones for the upcoming academic year</p>
-                    </div>
-                    <div class="deadlines-slider">
-                        <div class="deadline-card priority">
-                            <div class="date-badge">Oct 15</div>
-                            <h4>Early Action</h4>
-                            <p>Non-binding early application deadline with priority consideration</p>
-                            <div class="card-footer">Priority Deadline</div>
-                        </div>
-                        <div class="deadline-card">
-                            <div class="date-badge">Jan 1</div>
-                            <h4>Regular Decision</h4>
-                            <p>Standard application deadline for Fall semester admission</p>
-                            <div class="card-footer">Final Deadline</div>
-                        </div>
-                        <div class="deadline-card">
-                            <div class="date-badge">Feb 15</div>
-                            <h4>Scholarship Applications</h4>
-                            <p>Complete FAFSA and scholarship applications for maximum aid</p>
-                            <div class="card-footer">Financial Aid</div>
-                        </div>
-                        <div class="deadline-card">
-                            <div class="date-badge">May 1</div>
-                            <h4>Decision Day</h4>
-                            <p>Confirm enrollment and submit deposit to secure your place</p>
-                            <div class="card-footer">Enrollment</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="contact-section mt-5">
-                    <div class="row align-items-center">
-                        <div class="col-lg-7">
-                            <div class="contact-content">
-                                <h3>Connect with Our Admissions Team</h3>
-                                <p>Have questions about your application or need personalized guidance? Our dedicated admissions counselors are here to help you navigate the process and make informed decisions about your academic future.</p>
-                                <form action="forms/contact.php" class="inquiry-form php-email-form">
-                                    <div class="form-group-row">
-                                        <div class="form-group">
-                                            <input type="text" name="name" placeholder="Full Name*" required="">
-                                        </div>
-                                        <div class="form-group">
-                                            <input type="email" name="email" placeholder="Email Address*" required="">
-                                        </div>
-                                    </div>
-                                    <div class="form-group-row">
-                                        <div class="form-group">
-                                            <input type="tel" name="phone" placeholder="Phone Number">
-                                        </div>
-                                        <div class="form-group">
-                                            <select name="subject" required="">
-                                                <option selected="" disabled="">Program Interest*</option>
-                                                <option>Undergraduate</option>
-                                                <option>Graduate</option>
-                                                <option>Doctorate</option>
-                                                <option>Certificate</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div class="form-group full-width">
-                                        <textarea name="message" rows="5" placeholder="Tell us about your interests and goals..."></textarea>
-                                    </div>
-                                    <div class="form-actions">
-                                        <div class="loading">Loading</div>
-                                        <div class="error-message"></div>
-                                        <div class="sent-message">Your inquiry has been sent. Thank you!</div>
-                                        <button type="submit" class="submit-btn">Send Inquiry</button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                        <div class="col-lg-5">
-                            <div class="visit-invitation">
-                                <div class="visit-image">
-                                    <img src="assets/img/education/campus-8.webp" class="img-fluid" alt="Campus" loading="lazy">
-                                    <div class="visit-overlay">
-                                        <i class="bi bi-play-circle"></i>
-                                        <span>Virtual Campus Tour</span>
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
+                                        What are the tuition fees?
+                                    </button>
+                                </h2>
+                                <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#admissionsFAQ">
+                                    <div class="accordion-body">
+                                        As a public school, BUNHS is tuition-free. Minimal miscellaneous and PTA fees apply (approximately ₱1,500 first semester).
                                     </div>
                                 </div>
-                                <div class="visit-details">
-                                    <h4>Experience Our Campus</h4>
-                                    <div class="visit-options">
-                                        <div class="visit-option">
-                                            <i class="bi bi-calendar3"></i>
-                                            <div>
-                                                <span class="option-title">In-Person Tours</span>
-                                                <span class="option-detail">Monday - Friday, 10 AM &amp; 2 PM</span>
-                                            </div>
-                                        </div>
-                                        <div class="visit-option">
-                                            <i class="bi bi-camera-video"></i>
-                                            <div>
-                                                <span class="option-title">Virtual Experience</span>
-                                                <span class="option-detail">Interactive online campus tours available 24/7</span>
-                                            </div>
-                                        </div>
-                                        <div class="visit-option">
-                                            <i class="bi bi-people"></i>
-                                            <div>
-                                                <span class="option-title">Information Sessions</span>
-                                                <span class="option-detail">Meet with admissions counselors and current students</span>
-                                            </div>
-                                        </div>
+                            </div>
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq4">
+                                        Can I apply if I'm from another school division?
+                                    </button>
+                                </h2>
+                                <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#admissionsFAQ">
+                                    <div class="accordion-body">
+                                        Yes! We accept Grade 6 completers from any DepEd-recognized elementary school. Submit a Certificate of Transfer if applicable.
                                     </div>
-                                    <a href="#" class="schedule-btn">Schedule Your Visit</a>
                                 </div>
                             </div>
                         </div>
@@ -409,8 +266,7 @@
                 </div>
 
             </div>
-
-        </section><!-- /Admissions Section -->
+        </section><!-- End Admissions Section -->
 
     </main>
 
@@ -459,31 +315,9 @@
             .then(response => response.text())
             .then(data => {
                 document.body.insertAdjacentHTML('beforeend', data);
-                // Add event listeners for login and signup buttons
-                document.addEventListener('DOMContentLoaded', function() {
-                    const loginBtn = document.querySelector('.btn-login');
-                    const signupBtn = document.querySelector('.btn-signup');
-
-                    if (loginBtn) {
-                        loginBtn.addEventListener('click', function(e) {
-                            e.preventDefault();
-                            const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
-                            loginModal.show();
-                        });
-                    }
-
-                    if (signupBtn) {
-                        signupBtn.addEventListener('click', function(e) {
-                            e.preventDefault();
-                            const signupModal = new bootstrap.Modal(document.getElementById('signupModal'));
-                            signupModal.show();
-                        });
-                    }
-                });
             })
             .catch(error => console.error('Error loading modals:', error));
     </script>
-
 
 </body>
 
