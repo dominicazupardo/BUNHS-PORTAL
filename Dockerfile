@@ -1,6 +1,5 @@
 FROM dunglas/frankenphp:php8.4.19-bookworm
 
-# Install system dependencies and PHP extensions
 RUN apt-get update && apt-get install -y \
     libmariadb-dev \
     libzip-dev \
@@ -21,7 +20,6 @@ RUN apt-get update && apt-get install -y \
     && docker-php-ext-enable mysqli pdo_mysql \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
