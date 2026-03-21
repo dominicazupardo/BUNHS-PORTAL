@@ -2,7 +2,7 @@ FROM dunglas/frankenphp:php8.4.19-bookworm
 
 # Install system dependencies and PHP extensions
 RUN apt-get update && apt-get install -y \
-    libmysqlclient-dev \
+    libmariadb-dev \
     && docker-php-ext-install mysqli pdo_mysql mbstring zip gd curl \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
