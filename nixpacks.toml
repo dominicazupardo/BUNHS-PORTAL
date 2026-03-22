@@ -1,14 +1,14 @@
 [phases.setup]
 nixPkgs = [
   "php82",
-  "php82Extensions.mysqlnd",      # native driver required for mysqli/pdo_mysql
-  "php82Extensions.mysqli",       # mysqli extension → CRITICAL for deployment
-  "php82Extensions.pdo",          # PDO core
-  "php82Extensions.pdo_mysql",    # PDO MySQL driver
-  "php82Extensions.mbstring",     # multibyte string functions
-  "php82Extensions.gd",           # image functions
-  "php82Extensions.curl",         # curl functions
-  "php82Extensions.zip",          # zip functions
+  "php82Extensions.mysqlnd",
+  "php82Extensions.mysqli",
+  "php82Extensions.pdo",
+  "php82Extensions.pdo_mysql",
+  "php82Extensions.mbstring",
+  "php82Extensions.gd",
+  "php82Extensions.curl",
+  "php82Extensions.zip",
   "composer"
 ]
 
@@ -19,7 +19,6 @@ cmds = [
 
 [phases.build]
 cmds = [
-  "composer install --no-dev --optimize-autoloader --no-interaction",
   "php82 -m | grep mysqli || (echo 'ERROR: mysqli extension missing!' && exit 1)",
   "php82 -m | grep pdo_mysql || (echo 'ERROR: pdo_mysql extension missing!' && exit 1)",
   "echo 'PHP extensions verified. Ready for deployment.'"
