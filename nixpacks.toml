@@ -25,4 +25,4 @@ cmds = [
 ]
 
 [start]
-cmd = "exec php82 -S 0.0.0.0:${PORT:-8080} -t ."
+cmd = "exec php82 -S 0.0.0.0:8080 -t ."

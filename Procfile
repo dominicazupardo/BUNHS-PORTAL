@@ -1,1 +1,1 @@
-web: php -S 0.0.0.0:$PORT
+web: exec php82 -S 0.0.0.0:8080 -t .
